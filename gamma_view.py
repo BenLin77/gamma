@@ -4,6 +4,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 import numpy as np
+import yfinance as yf
+from datetime import timedelta
 
 def calculate_indicator_stats(df, selected_markers):
     """計算每個指標的統計數據"""
@@ -40,51 +42,100 @@ def load_stock_data(file_path):
             stock_data[sheet_name] = df
     return stock_data
 
-def create_candlestick_chart(df, selected_markers=None, title="Stock Chart"):
+def get_vix_data(start_date, end_date):
+    """獲取VIX數據"""
+    try:
+        # 向前多取5天數據，以確保有足夠的交易日數據
+        adjusted_start = (pd.to_datetime(start_date) - timedelta(days=5)).strftime('%Y-%m-%d')
+        adjusted_end = (pd.to_datetime(end_date) + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # 下載VIX數據
+        vix = yf.download('^VIX', start=adjusted_start, end=adjusted_end, progress=False)
+        
+        # 只保留收盤價，並將索引轉換為日期
+        vix_close = vix['Close']
+        vix_close.index = vix_close.index.date
+        
+        return vix_close
+    except Exception as e:
+        st.warning(f"無法獲取VIX數據: {str(e)}")
+        return None
+
+def create_candlestick_chart(df, selected_markers=None, title="Stock Chart", show_vix=False):
     """創建K線圖和指標線"""
-    fig = go.Figure()
+    # 創建帶有雙 Y 軸的子圖
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
 
     # 添加K線圖
-    fig.add_trace(go.Candlestick(
-        x=df['Date'],
-        open=df['Open'],
-        high=df['High'],
-        low=df['Low'],
-        close=df['Close'],
-        name='OHLC'
-    ))
+    fig.add_trace(
+        go.Candlestick(
+            x=df['Date'],
+            open=df['Open'],
+            high=df['High'],
+            low=df['Low'],
+            close=df['Close'],
+            name='OHLC'
+        ),
+        secondary_y=False
+    )
 
     # 添加選擇的指標線
     colors = ['pink', 'lightgreen', 'yellow', 'cyan', 'orange', 
              'purple', 'white', 'red', 'blue', 'gray', 'brown', 'lime']
     if selected_markers:
         for i, marker in enumerate(selected_markers):
-            if marker in df.columns:
-                fig.add_trace(go.Scatter(
-                    x=df['Date'],
-                    y=df[marker],
-                    mode='lines+markers',
-                    name=marker,
-                    line=dict(color=colors[i % len(colors)]),
-                    marker=dict(size=6)
-                ))
+            if marker in df.columns and marker != 'VIX':  # 排除 VIX，因為它會用次要 Y 軸
+                fig.add_trace(
+                    go.Scatter(
+                        x=df['Date'],
+                        y=df[marker],
+                        mode='markers',  # 只顯示點點，移除連線
+                        name=marker,
+                        marker=dict(
+                            color=colors[i % len(colors)],
+                            size=12,  # 增加點的大小
+                            symbol='circle',  # 使用圓形符號
+                            line=dict(
+                                color='white',  # 點的邊框顏色
+                                width=1  # 點的邊框寬度
+                            )
+                        )
+                    ),
+                    secondary_y=False
+                )
+
+    # 如果要顯示 VIX，添加到次要 Y 軸
+    if show_vix and 'VIX' in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df['Date'],
+                y=df['VIX'],
+                mode='lines',
+                name='VIX',
+                line=dict(color='orange', width=2),
+            ),
+            secondary_y=True
+        )
 
     # 更新圖表佈局
     fig.update_layout(
         title=title,
-        yaxis_title='Price',
         xaxis_title='Date',
         xaxis_rangeslider_visible=False,
         template='plotly_dark',
-        height=800,  # 增加圖表高度
+        height=800,
         legend=dict(
             yanchor="top",
             y=0.99,
             xanchor="left",
             x=1.05
         ),
-        margin=dict(r=250)  # 為右側圖例留出空間
+        margin=dict(r=250)
     )
+
+    # 設置主要和次要 Y 軸的標題
+    fig.update_yaxes(title_text="股價", secondary_y=False)
+    fig.update_yaxes(title_text="VIX", secondary_y=True)
 
     return fig
 
@@ -121,6 +172,9 @@ def main():
                 options=marker_options
             )
 
+            # VIX 顯示選項
+            show_vix = st.sidebar.checkbox("顯示VIX", value=True)
+
             # 日期範圍選擇
             df = stock_data[selected_stock]
             min_date = df['Date'].min()
@@ -137,6 +191,15 @@ def main():
                 start_date, end_date = date_range
                 mask = (df['Date'].dt.date >= start_date) & (df['Date'].dt.date <= end_date)
                 df_filtered = df.loc[mask]
+
+                # 獲取並添加 VIX 數據
+                if show_vix:
+                    with st.spinner('正在獲取 VIX 數據...'):
+                        vix_data = get_vix_data(start_date, end_date)
+                        if vix_data is not None:
+                            # 將 VIX 數據對齊到交易日
+                            vix_data = vix_data.reindex(df_filtered['Date'].dt.date)
+                            df_filtered['VIX'] = vix_data.values
 
                 # 計算統計數據
                 if selected_markers:
@@ -155,7 +218,8 @@ def main():
                 fig = create_candlestick_chart(
                     df_filtered, 
                     selected_markers,
-                    f"{selected_stock} Gamma Analysis"
+                    f"{selected_stock} Gamma Analysis",
+                    show_vix
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
