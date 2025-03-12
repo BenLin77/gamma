@@ -1,0 +1,30 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+requests = "*"
+browser-cookie3 = "*"
+beautifulsoup4 = "*"
+yfinance = "*"
+selenium = "*"
+pytest = "*"
+pytest-playwright = "*"
+playwright = "*"
+matplotlib = "*"
+numpy = "*"
+mplfinance = "*"
+ib-insync = "*"
+seaborn = "*"
+streamlit = "*"
+plotly = "*"
+pandas = "*"
+openpyxl = "*"
+discord = "*"
+python-dotenv = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.12"

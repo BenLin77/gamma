@@ -1,0 +1,41 @@
+
+=== QQQ 與 VIX 關係分析 ===
+
+VIX 閾值分析：
+
+VIX <= 15 時的指標出現機率：
+Call Wall: 35.8% (29/81)
+Call Dominate: 17.3% (14/81)
+Call Wall CE: 2.5% (2/81)
+Put Wall: 4.9% (4/81)
+Gamma Field: 2.5% (2/81)
+
+VIX > 15 時的指標出現機率：
+Call Wall: 17.5% (21/120)
+Call Dominate: 54.2% (65/120)
+Put Wall: 7.5% (9/120)
+Gamma Flip: 2.5% (3/120)
+Gamma Field: 1.7% (2/120)
+Call Wall CE: 1.7% (2/120)
+Put Wall CE: 0.8% (1/120)
+
+VIX > 17 時的指標出現機率：
+Call Wall: 14.9% (10/67)
+Call Dominate: 64.2% (43/67)
+Put Wall: 6.0% (4/67)
+Gamma Flip: 1.5% (1/67)
+Gamma Field: 1.5% (1/67)
+Call Wall CE: 1.5% (1/67)
+
+VIX > 20 時的指標出現機率：
+Call Dominate: 79.2% (19/24)
+Call Wall: 4.2% (1/24)
+Gamma Flip: 4.2% (1/24)
+Put Wall: 4.2% (1/24)
+Gamma Field: 4.2% (1/24)
+
+VIX > 25 時的指標出現機率：
+Call Wall: 25.0% (1/4)
+Call Dominate: 25.0% (1/4)
+Gamma Flip: 25.0% (1/4)
+Put Wall: 25.0% (1/4)

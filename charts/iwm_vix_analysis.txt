@@ -1,0 +1,23 @@
+
+=== IWM 與 VIX 關係分析 ===
+
+VIX 閾值分析：
+
+VIX <= 15 時的指標出現機率：
+Call Wall: 32.1% (26/81)
+Call Wall CE: 3.7% (3/81)
+Call Dominate: 46.9% (38/81)
+
+VIX > 15 時的指標出現機率：
+Call Wall: 5.3% (6/114)
+Call Dominate: 88.6% (101/114)
+
+VIX > 17 時的指標出現機率：
+Call Dominate: 95.4% (62/65)
+Call Wall: 1.5% (1/65)
+
+VIX > 20 時的指標出現機率：
+Call Dominate: 100.0% (24/24)
+
+VIX > 25 時的指標出現機率：
+Call Dominate: 100.0% (4/4)

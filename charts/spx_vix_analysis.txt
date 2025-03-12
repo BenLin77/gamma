@@ -1,0 +1,36 @@
+
+=== SPX 與 VIX 關係分析 ===
+
+VIX 閾值分析：
+
+VIX <= 15 時的指標出現機率：
+Put Dominate: 60.5% (49/81)
+Put Wall: 6.2% (5/81)
+Call Wall: 11.1% (9/81)
+Gamma Flip: 2.5% (2/81)
+Put Wall CE: 1.2% (1/81)
+Gamma Field: 1.2% (1/81)
+
+VIX > 15 時的指標出現機率：
+Put Dominate: 56.0% (70/125)
+Put Wall: 11.2% (14/125)
+Call Wall: 3.2% (4/125)
+Gamma Flip: 0.8% (1/125)
+Call Wall CE: 0.8% (1/125)
+Put Wall CE: 0.8% (1/125)
+
+VIX > 17 時的指標出現機率：
+Put Dominate: 47.8% (33/69)
+Put Wall: 13.0% (9/69)
+Call Wall: 5.8% (4/69)
+Gamma Flip: 1.4% (1/69)
+Put Wall CE: 1.4% (1/69)
+
+VIX > 20 時的指標出現機率：
+Call Wall: 16.7% (4/24)
+Put Wall: 20.8% (5/24)
+Put Dominate: 20.8% (5/24)
+
+VIX > 25 時的指標出現機率：
+Call Wall: 50.0% (2/4)
+Put Wall: 25.0% (1/4)

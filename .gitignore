@@ -1,0 +1,17 @@
+# Python
+*.pyc
+__pycache__/
+.env
+.venv
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Data files
+*.json
+auth.json
+ming_auth.json
