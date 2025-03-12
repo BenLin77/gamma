@@ -16,3 +16,4 @@ auth.json
 ming_auth.json
 Pipfile
 Pipfile.lock
+*.xlsx

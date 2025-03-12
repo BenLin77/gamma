@@ -7,8 +7,14 @@
 ### 1. 數據視覺化 (gamma_view.py)
 - 互動式 K 線圖顯示
 - Gamma 指標疊加顯示
+- VIX 即時數據整合
 - 支援多股票數據
 - 自定義時間範圍查看
+- 指標統計分析：
+  * 穿越次數統計
+  * 向下穿越機率
+  * 平均持續時間
+  * 最近價格距離
 
 ### 2. 數據採集 (playwright_record.py)
 - 自動化數據採集
@@ -94,10 +100,34 @@ python gamma_converter.py -r -f tvcode_20240312.txt
 python gamma_converter.py --overwrite -f tvcode_20240312.txt
 ```
 
-### 數據視覺化
+### 數據視覺化 (gamma_view.py)
 ```bash
 pipenv run streamlit run gamma_view.py
 ```
+
+功能特點：
+1. 基本功能：
+   - 上傳 Excel 文件
+   - 選擇股票代碼
+   - 自定義時間範圍
+   - 多重指標疊加
+
+2. 指標分析：
+   - 選擇多個技術指標
+   - 查看指標統計數據
+   - 分析指標有效性
+
+3. VIX 整合：
+   - 自動獲取 VIX 數據
+   - 雙 Y 軸顯示
+   - 即時數據同步
+   - 可選擇性顯示
+
+4. 數據統計：
+   - 指標穿越統計
+   - 機率分析
+   - 持續時間計算
+   - 價格距離分析
 
 ### Discord 通知
 ```bash
