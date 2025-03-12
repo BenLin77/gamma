@@ -8,14 +8,14 @@ import yfinance as yf
 from datetime import timedelta
 from functools import lru_cache
 
-@st.cache_data(ttl=3600)  # 快取一小時
+@st.cache_data(ttl=3600)
 def load_stock_data(file_path):
     """讀取Excel檔案中的所有分頁數據"""
     xls = pd.ExcelFile(file_path)
     stock_data = {}
     for sheet_name in xls.sheet_names:
         df = pd.read_excel(file_path, sheet_name=sheet_name)
-        if 'Date' in df.columns:  # 確保有日期欄位
+        if 'Date' in df.columns:
             df['Date'] = pd.to_datetime(df['Date'])
             stock_data[sheet_name] = df
     return stock_data
@@ -87,11 +87,52 @@ def calculate_indicator_stats(df, selected_markers):
             # 計算統計數據
             total_valid = np.sum(valid_mask)
             
+            # 計算最近 N 天的趨勢
+            last_n_days = 5
+            if len(marker_values) >= last_n_days:
+                recent_trend = "上升" if marker_values[-1] > marker_values[-last_n_days] else "下降"
+                trend_change = abs(marker_values[-1] - marker_values[-last_n_days]) / marker_values[-last_n_days] * 100
+            else:
+                recent_trend = "無法計算"
+                trend_change = 0
+            
+            # 計算成功率（實際突破/跌破後是否繼續朝預期方向發展）
+            if len(cross_dates) > 0:
+                success_count = 0
+                for i, cross_date in enumerate(cross_dates):
+                    cross_idx = np.where(dates == cross_date)[0][0]
+                    if cross_idx + 3 < len(close_prices):  # 確保有足夠的後續數據
+                        if is_upward_break:
+                            # 向上突破後是否繼續上漲
+                            success = close_prices[cross_idx + 3] > close_prices[cross_idx]
+                        elif is_downward_break:
+                            # 向下跌破後是否繼續下跌
+                            success = close_prices[cross_idx + 3] < close_prices[cross_idx]
+                        if success:
+                            success_count += 1
+                success_rate = (success_count / len(cross_dates)) * 100
+            else:
+                success_rate = 0
+            
+            # 計算最近一次穿越的表現
+            if len(cross_dates) > 0:
+                last_cross_idx = np.where(dates == cross_dates[-1])[0][0]
+                if last_cross_idx + 1 < len(close_prices):
+                    last_cross_change = ((close_prices[-1] - close_prices[last_cross_idx]) / 
+                                       close_prices[last_cross_idx] * 100)
+                else:
+                    last_cross_change = 0
+            else:
+                last_cross_change = 0
+            
             stats[marker] = {
+                '指標趨勢': f"{recent_trend} ({trend_change:.2f}%)",
                 '穿越次數': np.sum(crosses),
                 f'{prob_text}': f"{(below_count / total_valid * 100):.2f}%" if total_valid > 0 else "N/A",
-                '平均持續時間(天)': f"{avg_duration:.1f}" if avg_duration > 0 else "N/A",
-                '最近距離': f"{(close_prices[-1] - marker_values[-1]):.2f}" if not np.isnan(marker_values[-1]) else "N/A"
+                '平均持續時間': f"{avg_duration:.1f}天" if avg_duration > 0 else "N/A",
+                '成功率': f"{success_rate:.1f}%" if success_rate > 0 else "N/A",
+                '最近穿越表現': f"{last_cross_change:+.2f}%" if last_cross_change != 0 else "N/A",
+                '當前距離': f"{(close_prices[-1] - marker_values[-1]):+.2f}" if not np.isnan(marker_values[-1]) else "N/A"
             }
     return stats
 
@@ -231,67 +272,73 @@ def main():
         stock_data = load_stock_data(uploaded_file)
         
         if stock_data:
-            selected_stock = st.sidebar.selectbox(
-                "選擇股票",
-                options=list(stock_data.keys())
-            )
+            # 左側邊欄設置
+            with st.sidebar:
+                selected_stock = st.selectbox(
+                    "選擇股票",
+                    options=list(stock_data.keys())
+                )
 
-            marker_options = [
-                'Gamma Field', 'Call Dominate', 'Put Dominate', 'Gamma Flip',
-                'Call Wall', 'Put Wall', 'Call Wall CE', 'Put Wall CE',
-                'Gamma Field CE', 'Gamma Flip CE',
-                'Implied Movement +σ', 'Implied Movement -σ',
-                'Implied Movement +2σ', 'Implied Movement -2σ'
-            ]
+                marker_options = [
+                    'Gamma Field', 'Call Dominate', 'Put Dominate', 'Gamma Flip',
+                    'Call Wall', 'Put Wall', 'Call Wall CE', 'Put Wall CE',
+                    'Gamma Field CE', 'Gamma Flip CE',
+                    'Implied Movement +σ', 'Implied Movement -σ',
+                    'Implied Movement +2σ', 'Implied Movement -2σ'
+                ]
 
-            selected_markers = st.sidebar.multiselect(
-                "選擇要顯示的指標",
-                options=marker_options
-            )
+                selected_markers = st.multiselect(
+                    "選擇要顯示的指標",
+                    options=marker_options
+                )
 
-            show_vix = st.sidebar.checkbox("顯示VIX", value=True)
+                show_vix = st.checkbox("顯示VIX", value=True)
 
-            df = stock_data[selected_stock]
-            min_date = df['Date'].min()
-            max_date = df['Date'].max()
+            # 主要內容區域
+            col1, col2 = st.columns([7, 3])
             
-            date_range = st.sidebar.date_input(
-                "選擇日期範圍",
-                value=(min_date, max_date),
-                min_value=min_date,
-                max_value=max_date
-            )
+            with col1:
+                df = stock_data[selected_stock]
+                min_date = df['Date'].min()
+                max_date = df['Date'].max()
+                
+                date_range = st.date_input(
+                    "選擇日期範圍",
+                    value=(min_date, max_date),
+                    min_value=min_date,
+                    max_value=max_date
+                )
 
-            if len(date_range) == 2:
-                start_date, end_date = date_range
-                mask = (df['Date'].dt.date >= start_date) & (df['Date'].dt.date <= end_date)
-                df_filtered = df.loc[mask]
+                if len(date_range) == 2:
+                    start_date, end_date = date_range
+                    mask = (df['Date'].dt.date >= start_date) & (df['Date'].dt.date <= end_date)
+                    df_filtered = df.loc[mask]
 
-                if show_vix:
-                    with st.spinner('正在獲取 VIX 數據...'):
-                        vix_data = get_vix_data(start_date, end_date)
-                        if vix_data is not None:
-                            vix_data = vix_data.reindex(df_filtered['Date'].dt.date)
-                            df_filtered['VIX'] = vix_data.values
+                    if show_vix:
+                        with st.spinner('正在獲取 VIX 數據...'):
+                            vix_data = get_vix_data(start_date, end_date)
+                            if vix_data is not None:
+                                vix_data = vix_data.reindex(df_filtered['Date'].dt.date)
+                                df_filtered['VIX'] = vix_data.values
 
+                    # 顯示圖表
+                    fig = create_candlestick_chart(
+                        df_filtered, 
+                        selected_markers,
+                        f"{selected_stock} Gamma Analysis",
+                        show_vix
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+            # 右側資訊面板
+            with col2:
+                st.markdown("### Gamma 指標統計")
                 if selected_markers:
                     stats = calculate_indicator_stats(df_filtered, selected_markers)
-                    
-                    st.sidebar.markdown("---")
-                    st.sidebar.markdown("### 指標統計")
                     for marker, stat in stats.items():
-                        st.sidebar.markdown(f"#### {marker}")
-                        for key, value in stat.items():
-                            st.sidebar.write(f"{key}: {value}")
-                        st.sidebar.markdown("---")
-
-                fig = create_candlestick_chart(
-                    df_filtered, 
-                    selected_markers,
-                    f"{selected_stock} Gamma Analysis",
-                    show_vix
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                        with st.expander(marker):
+                            for key, value in stat.items():
+                                st.write(f"**{key}:** {value}")
 
 if __name__ == "__main__":
     main()
