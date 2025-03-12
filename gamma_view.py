@@ -49,7 +49,7 @@ def calculate_indicator_stats(df, selected_markers):
             valid_mask = ~np.isnan(marker_values)
             
             # 判斷指標類型
-            is_upward_break = any(keyword in marker.lower() for keyword in ['call', '+σ', 'dominate'])
+            is_upward_break = any(keyword in marker.lower() for keyword in ['call', '+σ'])
             is_downward_break = any(keyword in marker.lower() for keyword in ['put', '-σ', 'flip'])
             
             # 使用 NumPy 進行向量化運算
