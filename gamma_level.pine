@@ -217,39 +217,98 @@ if barstate.islast and str.length(inputData) > 0
         
         // 繪製線條和標籤
         priceArray = map.keys(priceLabels)
-        for price in priceArray
+        // 對價格進行排序，以便更好地處理標籤位置
+        array.sort(priceArray)
+        
+        // 用於追踪上一個標籤的位置
+        var float lastLabelPrice = na
+        
+        for i = 0 to array.size(priceArray) - 1
+            price = array.get(priceArray, i)
             combinedLabel = map.get(priceLabels, price)
-            labels = str.split(combinedLabel, " & ")
+            labelsList = str.split(combinedLabel, " & ")
             
-            // 只繪製一條線，使用第一個標籤的顏色
-            firstLabel = array.get(labels, 0)
-            firstColor = getPrimaryColor(firstLabel)
+            // 選擇最具代表性的顏色
+            // 優先順序：Gamma Flip > Put/Call Dominate > Put/Call Wall > Key Delta > 其他
+            representativeColor = color.gray
+            hasGammaFlip = false
+            hasPutDominate = false
+            hasCallDominate = false
+            hasPutWall = false
+            hasCallWall = false
+            hasKeyDelta = false
+            
+            for labelText in labelsList
+                if str.contains(labelText, "Gamma Flip")
+                    hasGammaFlip := true
+                if str.contains(labelText, "Put Dominate")
+                    hasPutDominate := true
+                if str.contains(labelText, "Call Dominate")
+                    hasCallDominate := true
+                if str.contains(labelText, "Put Wall")
+                    hasPutWall := true
+                if str.contains(labelText, "Call Wall")
+                    hasCallWall := true
+                if str.contains(labelText, "Key Delta")
+                    hasKeyDelta := true
+            
+            if hasGammaFlip
+                representativeColor := GAMMA_FLIP_COLOR
+            else if hasPutDominate
+                representativeColor := PUT_DOMINATE_COLOR
+            else if hasCallDominate
+                representativeColor := CALL_DOMINATE_COLOR
+            else if hasPutWall
+                representativeColor := PUT_WALL_COLOR
+            else if hasCallWall
+                representativeColor := CALL_WALL_COLOR
+            else if hasKeyDelta
+                representativeColor := DELTA_COLOR
+            else
+                // 使用第一個標籤的顏色
+                firstLabel = array.get(labelsList, 0)
+                representativeColor := getPrimaryColor(firstLabel)
             
             // 繪製線條
             line.new(bar_index[leftExtend], price, bar_index + 2, price, 
-                 color=firstColor,
+                 color=representativeColor,
                  style=line.style_solid,
                  width=lineWidth)
             
             // 繪製標籤
             if showLabels
+                // 處理組合標籤，使其更加簡潔
+                displayLabel = combinedLabel
+                if str.length(combinedLabel) > 50  // 如果標籤太長
+                    // 提取前兩個標籤並添加省略號
+                    if array.size(labelsList) > 2
+                        displayLabel := array.get(labelsList, 0) + " & " + array.get(labelsList, 1) + "... +" + str.tostring(array.size(labelsList) - 2) + " more"
+                
+                // 計算標籤的垂直位置，避免重疊
+                labelYOffset = price * 0.0002
+                if not na(lastLabelPrice) and (price - lastLabelPrice) / price < 0.005  // 如果與上一個標籤太近
+                    labelYOffset := price * 0.0015  // 增加垂直偏移
+                
                 // 在線的左邊顯示組合的等級名稱
-                label.new(bar_index - 2, price + (price * 0.0002),
-                     text=combinedLabel, 
+                label.new(bar_index - 2, price + labelYOffset,
+                     text=displayLabel, 
                      color=color.new(color.black, 90),
                      style=label.style_label_left,
-                     textcolor=firstColor,
+                     textcolor=representativeColor,
                      size=size.large,
                      textalign=text.align_right)
                 
                 // 在線的右邊顯示價格
-                label.new(bar_index + 2, price + (price * 0.0002),
+                label.new(bar_index + 2, price + labelYOffset,
                      text=str.tostring(price, "#.##"), 
                      color=color.new(color.black, 90),
                      style=label.style_label_right,
-                     textcolor=firstColor,
+                     textcolor=representativeColor,
                      size=size.large,
                      textalign=text.align_left)
+                
+                // 更新上一個標籤的位置
+                lastLabelPrice := price
 
     // 檢查警報條件
     if arraySize > 0
