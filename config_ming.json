@@ -1,0 +1,22 @@
+{
+    "tickers": [
+        "hims",
+        "avgo",
+        "mstr",
+        "sofi",
+        "mrvl",
+        "mdb",
+        "pltr",
+        "aapl",
+        "meta"
+    ],
+    "download_settings": {
+        "wait_time": {
+            "page_load": 15,
+            "gamma_load": 15,
+            "smile_load": 20,
+            "tvcode_load": 45
+        },
+        "retries": 3
+    }
+} 

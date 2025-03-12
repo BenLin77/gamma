@@ -12,6 +12,7 @@ __pycache__/
 .DS_Store
 
 # Data files
-*.json
 auth.json
 ming_auth.json
+Pipfile
+Pipfile.lock

@@ -57,14 +57,46 @@ pip install -r requirements.txt
 
 ## 使用說明
 
+### 數據採集 (playwright_record.py)
+```bash
+# 基本使用
+python playwright_record.py
+
+# 參數說明
+--auth          認證文件路徑 (預設: auth.json)
+--config        配置文件路徑 (預設: config.json)
+--download-dir  下載目錄路徑 (預設: /home/ben/pCloudDrive/stock/GEX/GEX_file/)
+
+# 範例
+python playwright_record.py --auth ming_auth.json --config custom_config.json
+```
+
+### 數據轉換 (gamma_converter.py)
+```bash
+# 基本使用
+python gamma_converter.py
+
+# 參數說明
+-r, --reverse   將簡化格式轉換回原始格式
+-p, --path      指定 GEX 文件路徑
+-d, --debug     顯示調試信息
+-f, --file      指定要處理的文件名
+--overwrite     直接覆蓋原始文件
+
+# 範例
+# 轉換為簡短格式
+python gamma_converter.py -f tvcode_20240312.txt
+
+# 轉換回原始格式
+python gamma_converter.py -r -f tvcode_20240312.txt
+
+# 直接覆蓋原檔案
+python gamma_converter.py --overwrite -f tvcode_20240312.txt
+```
+
 ### 數據視覺化
 ```bash
 pipenv run streamlit run gamma_view.py
-```
-
-### 數據採集
-```bash
-pipenv run python playwright_record.py
 ```
 
 ### Discord 通知
@@ -75,6 +107,27 @@ pipenv run python sending_discord.py
 ### 自動化運行
 ```bash
 ./run.sh
+```
+
+## 配置文件說明
+
+### config.json
+```json
+{
+    "tickers": [
+        "spx", "qqq", "iwm", "smh", "vix",
+        "smci", "nvda", "tsla", "uvix", "svix", "tlt"
+    ],
+    "download_settings": {
+        "wait_time": {
+            "page_load": 15,
+            "gamma_load": 15,
+            "smile_load": 20,
+            "tvcode_load": 45
+        },
+        "retries": 3
+    }
+}
 ```
 
 ## 檔案結構

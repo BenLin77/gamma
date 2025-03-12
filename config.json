@@ -1,0 +1,24 @@
+{
+    "tickers": [
+        "spx",
+        "qqq",
+        "iwm",
+        "smh",
+        "vix",
+        "smci",
+        "nvda",
+        "tsla",
+        "uvix",
+        "svix",
+        "tlt"
+    ],
+    "download_settings": {
+        "wait_time": {
+            "page_load": 15,
+            "gamma_load": 15,
+            "smile_load": 20,
+            "tvcode_load": 45
+        },
+        "retries": 3
+    }
+} 
