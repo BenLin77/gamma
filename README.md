@@ -36,6 +36,22 @@
 - 自動備份歷史數據
 - 維護數據完整性
 
+### 6. Put Dominate 分析 (put_dom_trade.py)
+- 自動分析多個股票的 Put Dominate 數據
+- 計算並顯示：
+  * Gamma Flip
+  * Gamma Flip CE
+  * Put Dominate
+  * Put Dominate 變化
+  * Daily Gamma Environment
+  * All Contracts Gamma Environment
+- 特殊情況提醒：
+  * V型反轉（看漲）
+  * 倒V型反轉（看跌）
+  * 首次跌破 Gamma Flip
+- 自動發送分析結果到 Discord
+- 支援批量下載歷史價格數據
+
 ## 安裝指南
 
 1. 安裝依賴：
@@ -112,6 +128,32 @@ python gamma_converter.py
 python gamma_converter.py -f tvcode_20240312.txt
 ```
 
+### Put Dominate 分析
+```bash
+pipenv run python put_dom_trade.py
+```
+
+功能特點：
+1. 數據分析：
+   - 自動計算多個關鍵指標
+   - 追蹤 Put Dominate 趨勢變化
+   - 識別重要市場轉折點
+
+2. 趨勢反轉偵測：
+   - V型反轉（看漲信號）
+   - 倒V型反轉（看跌信號）
+   - 變化幅度過濾（>1.0）
+
+3. Gamma 環境分析：
+   - Daily Gamma Environment
+   - All Contracts Gamma Environment
+   - Gamma Flip 突破提醒
+
+4. 自動化報告：
+   - 生成美觀的表格圖片
+   - Discord 自動通知
+   - 中文說明訊息
+
 ### Discord 通知
 ```bash
 pipenv run python sending_discord.py
@@ -149,6 +191,7 @@ pipenv run python sending_discord.py
 - `sending_discord.py`: Discord 通知
 - `gamma_converter.py`: 數據轉換
 - `backup_gex.py`: 數據備份
+- `put_dom_trade.py`: Put Dominate 分析
 
 ## 注意事項
 1. 請確保已安裝所有必要的依賴
@@ -162,6 +205,7 @@ pipenv run python sending_discord.py
 - Streamlit 視覺化框架
 
 ## 更新日誌
+- 2024-03-17: 新增 Put Dominate 分析功能
 - 2024-03-12: 新增 VIX 數據整合
 - 2024-03-12: 優化視覺化界面
 - 2024-03-10: 更新數據備份功能 
