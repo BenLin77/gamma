@@ -129,7 +129,7 @@ def create_market_table(market_data):
         
         # 計算 Put Dominate 變化
         pd_change = ""
-        pd_trend_reversed = False
+        pd_pattern_found = False  # 用於標記是否已找到某種模式
         
         if put_dominate is not None and prev_put_dominate is not None:
             diff = put_dominate - prev_put_dominate
@@ -137,24 +137,62 @@ def create_market_table(market_data):
                 pd_change = "Same"
             elif diff > 0:
                 pd_change = f"+{diff:.2f}"
-                # 檢查是否從下降轉為上升
-                # 條件：前天 > 昨天，今天 > 昨天（V型反轉）
-                if (prev_prev_put_dominate is not None and 
-                    prev_prev_put_dominate > prev_put_dominate and 
-                    put_dominate > prev_put_dominate and
-                    abs(put_dominate - prev_put_dominate) > 1.0):  # 確保變化足夠大
-                    pd_trend_reversed = True
-                    special_notes.append(f"{stock}: Put Dominate V型反轉向上 ({prev_prev_put_dominate:.2f} -> {prev_put_dominate:.2f} -> {put_dominate:.2f})")
             else:
                 pd_change = f"{diff:.2f}"
-                # 檢查是否從上升轉為下降
-                # 條件：前天 < 昨天，今天 < 昨天（倒V型反轉）
-                if (prev_prev_put_dominate is not None and 
-                    prev_prev_put_dominate < prev_put_dominate and 
-                    put_dominate < prev_put_dominate and
-                    abs(put_dominate - prev_put_dominate) > 1.0):  # 確保變化足夠大
-                    pd_trend_reversed = True
-                    special_notes.append(f"{stock}: Put Dominate 倒V型反轉向下 ({prev_prev_put_dominate:.2f} -> {prev_put_dominate:.2f} -> {put_dominate:.2f})")
+
+            # 檢查V型反轉（看漲）
+            if (not pd_pattern_found and
+                prev_prev_put_dominate is not None and 
+                prev_prev_put_dominate > prev_put_dominate and 
+                put_dominate > prev_put_dominate and
+                abs(diff) > 1.0):  # 使用絕對值變化
+                special_notes.append({
+                    'stock': stock,
+                    'type': 'V型反轉',
+                    'priority': 1,
+                    'message': f"🚀 {stock}: Put Dominate V型反轉向上\n   {prev_prev_put_dominate:.2f} ↘️ {prev_put_dominate:.2f} ↗️ {put_dominate:.2f}"
+                })
+                pd_pattern_found = True
+
+            # 檢查倒V型反轉（看跌）
+            if (not pd_pattern_found and
+                prev_prev_put_dominate is not None and 
+                prev_prev_put_dominate < prev_put_dominate and 
+                put_dominate < prev_put_dominate and
+                abs(diff) > 1.0):  # 使用絕對值變化
+                special_notes.append({
+                    'stock': stock,
+                    'type': '倒V型反轉',
+                    'priority': 2,
+                    'message': f"📉 {stock}: Put Dominate 倒V型反轉向下\n   {prev_prev_put_dominate:.2f} ↗️ {prev_put_dominate:.2f} ↘️ {put_dominate:.2f}"
+                })
+                pd_pattern_found = True
+
+            # 檢查止跌（連續下跌後橫盤）
+            if (not pd_pattern_found and
+                prev_prev_put_dominate is not None and 
+                prev_prev_put_dominate > prev_put_dominate and  # 前天到昨天下跌
+                abs(diff) < 0.5):  # 今天和昨天變化很小
+                special_notes.append({
+                    'stock': stock,
+                    'type': '止跌',
+                    'priority': 3,
+                    'message': f"🛟 {stock}: Put Dominate 可能止跌\n   {prev_prev_put_dominate:.2f} ↘️ {prev_put_dominate:.2f} ➡️ {put_dominate:.2f}"
+                })
+                pd_pattern_found = True
+
+            # 檢查漲不動（連續上漲後橫盤）
+            if (not pd_pattern_found and
+                prev_prev_put_dominate is not None and 
+                prev_prev_put_dominate < prev_put_dominate and  # 前天到昨天上漲
+                abs(diff) < 0.5):  # 今天和昨天變化很小
+                special_notes.append({
+                    'stock': stock,
+                    'type': '漲不動',
+                    'priority': 4,
+                    'message': f"⚠️ {stock}: Put Dominate 可能漲不動\n   {prev_prev_put_dominate:.2f} ↗️ {prev_put_dominate:.2f} ➡️ {put_dominate:.2f}"
+                })
+                pd_pattern_found = True
         
         # 判斷Gamma環境
         daily_gamma = 'Positive' if gamma_flip_ce and current_price and current_price > gamma_flip_ce else 'Negative'
@@ -163,7 +201,12 @@ def create_market_table(market_data):
         # 檢查是否首次跌破 Gamma Flip
         if current_price and gamma_flip and prev_day_price:
             if current_price < gamma_flip and prev_day_price > gamma_flip:
-                special_notes.append(f"{stock}: 現價首次跌破 Gamma Flip (前一日: {prev_day_price:.2f} -> 現價: {current_price:.2f}, Gamma Flip: {gamma_flip:.2f})")
+                special_notes.append({
+                    'stock': stock,
+                    'type': 'Gamma Flip 突破',
+                    'priority': 0,  # 最高優先級
+                    'message': f"💥 {stock}: 現價首次跌破 Gamma Flip\n   價格: {prev_day_price:.2f} ↘️ {current_price:.2f}\n   Gamma Flip: {gamma_flip:.2f}"
+                })
         
         data.append([
             stock,
@@ -175,6 +218,10 @@ def create_market_table(market_data):
             daily_gamma,
             all_gamma
         ])
+    
+    # 按優先級排序特殊情況提醒
+    special_notes.sort(key=lambda x: (x['priority'], x['stock']))
+    special_notes = [note['message'] for note in special_notes]
     
     # 創建圖片
     fig, ax = plt.figure(figsize=(16, len(data)*0.5 + 1)), plt.gca()
