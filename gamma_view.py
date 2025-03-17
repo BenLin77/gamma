@@ -249,12 +249,13 @@ def create_candlestick_chart(df, selected_markers=None, title="Stock Chart", sho
         template='plotly_dark',
         height=800,
         legend=dict(
-            yanchor="top",
-            y=0.99,
-            xanchor="left",
-            x=1.05
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
         ),
-        margin=dict(r=250)
+        margin=dict(l=50, r=50, t=100, b=50)
     )
 
     fig.update_yaxes(title_text="股價", secondary_y=False)
@@ -272,55 +273,61 @@ def main():
         stock_data = load_stock_data(uploaded_file)
         
         if stock_data:
-            # 左側邊欄設置
-            with st.sidebar:
+            # 頂部設置區域
+            col_stock, col_date, col_vix = st.columns([1, 2, 1])
+            
+            with col_stock:
                 selected_stock = st.selectbox(
                     "選擇股票",
                     options=list(stock_data.keys())
                 )
-
-                marker_options = [
-                    'Gamma Field', 'Call Dominate', 'Put Dominate', 'Gamma Flip',
-                    'Call Wall', 'Put Wall', 'Call Wall CE', 'Put Wall CE',
-                    'Gamma Field CE', 'Gamma Flip CE',
-                    'Implied Movement +σ', 'Implied Movement -σ',
-                    'Implied Movement +2σ', 'Implied Movement -2σ'
-                ]
-
-                selected_markers = st.multiselect(
-                    "選擇要顯示的指標",
-                    options=marker_options
-                )
-
-                show_vix = st.checkbox("顯示VIX", value=True)
-
-            # 主要內容區域
-            col1, col2 = st.columns([7, 3])
             
-            with col1:
-                df = stock_data[selected_stock]
-                min_date = df['Date'].min()
-                max_date = df['Date'].max()
-                
+            df = stock_data[selected_stock]
+            min_date = df['Date'].min()
+            max_date = df['Date'].max()
+            
+            with col_date:
                 date_range = st.date_input(
                     "選擇日期範圍",
                     value=(min_date, max_date),
                     min_value=min_date,
                     max_value=max_date
                 )
+            
+            with col_vix:
+                show_vix = st.checkbox("顯示VIX", value=True)
+            
+            # 指標選擇區域（使用水平佈局）
+            marker_options = [
+                'Gamma Field', 'Call Dominate', 'Put Dominate', 'Gamma Flip',
+                'Call Wall', 'Put Wall', 'Call Wall CE', 'Put Wall CE',
+                'Gamma Field CE', 'Gamma Flip CE',
+                'Implied Movement +σ', 'Implied Movement -σ',
+                'Implied Movement +2σ', 'Implied Movement -2σ'
+            ]
+            
+            selected_markers = st.multiselect(
+                "選擇要顯示的指標",
+                options=marker_options
+            )
+            
+            # 主要內容區域 - 響應式佈局
+            if len(date_range) == 2:
+                start_date, end_date = date_range
+                mask = (df['Date'].dt.date >= start_date) & (df['Date'].dt.date <= end_date)
+                df_filtered = df.loc[mask]
 
-                if len(date_range) == 2:
-                    start_date, end_date = date_range
-                    mask = (df['Date'].dt.date >= start_date) & (df['Date'].dt.date <= end_date)
-                    df_filtered = df.loc[mask]
+                if show_vix:
+                    with st.spinner('正在獲取 VIX 數據...'):
+                        vix_data = get_vix_data(start_date, end_date)
+                        if vix_data is not None:
+                            vix_data = vix_data.reindex(df_filtered['Date'].dt.date)
+                            df_filtered['VIX'] = vix_data.values
 
-                    if show_vix:
-                        with st.spinner('正在獲取 VIX 數據...'):
-                            vix_data = get_vix_data(start_date, end_date)
-                            if vix_data is not None:
-                                vix_data = vix_data.reindex(df_filtered['Date'].dt.date)
-                                df_filtered['VIX'] = vix_data.values
-
+                # 使用選項卡來分離圖表和統計信息
+                tab1, tab2 = st.tabs(["K線圖", "指標統計"])
+                
+                with tab1:
                     # 顯示圖表
                     fig = create_candlestick_chart(
                         df_filtered, 
@@ -329,16 +336,17 @@ def main():
                         show_vix
                     )
                     st.plotly_chart(fig, use_container_width=True)
-
-            # 右側資訊面板
-            with col2:
-                st.markdown("### Gamma 指標統計")
-                if selected_markers:
-                    stats = calculate_indicator_stats(df_filtered, selected_markers)
-                    for marker, stat in stats.items():
-                        with st.expander(marker):
-                            for key, value in stat.items():
-                                st.write(f"**{key}:** {value}")
+                
+                with tab2:
+                    if selected_markers:
+                        stats = calculate_indicator_stats(df_filtered, selected_markers)
+                        # 使用列佈局顯示統計信息
+                        cols = st.columns(min(3, len(stats)))
+                        for i, (marker, stat) in enumerate(stats.items()):
+                            with cols[i % len(cols)]:
+                                with st.expander(marker, expanded=True):
+                                    for key, value in stat.items():
+                                        st.write(f"**{key}:** {value}")
 
 if __name__ == "__main__":
     main()
