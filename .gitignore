@@ -17,8 +17,10 @@ ming_auth.json
 Pipfile
 Pipfile.lock
 *.xlsx
+ibkr_config.ini
 
-# Byte-compiled / optimized / DLL files
+# Byte-compi
+led / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class

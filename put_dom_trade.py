@@ -34,61 +34,76 @@ def parse_price_levels(line):
         levels = {}
         
         # 分割成標籤=值的對
-        pairs = levels_str.split('=')
+        items = levels_str.split('=')
         
-        for i in range(len(pairs) - 1):  # 最後一個元素沒有值
-            label_part = pairs[i]
-            value_part = pairs[i + 1]
+        for i in range(len(items)-1):
+            # 取得當前項和下一項
+            current_item = items[i]
+            next_item = items[i+1]
             
-            # 找到值部分的數字
-            value_digits = ""
-            for char in value_part:
+            # 從下一項中提取數值
+            value = ""
+            for char in next_item:
                 if char.isdigit() or char == '.':
-                    value_digits += char
+                    value += char
                 else:
                     break
-                    
-            if value_digits:
-                value = float(value_digits)
-                
-                # 處理標籤部分
-                if i == 0:  # 第一個元素
-                    labels = label_part.split(',')
+            
+            if value:  # 如果找到數值
+                value = float(value)
+                # 從當前項中提取標籤
+                if i == 0:
+                    labels = current_item.split(',')
                 else:
-                    # 找到上一個值的結尾位置
-                    prev_value = pairs[i-1]
-                    prev_digits = ""
-                    for char in prev_value:
+                    # 找到前一個數值的結尾位置
+                    prev_value = ""
+                    for char in current_item:
                         if char.isdigit() or char == '.':
-                            prev_digits += char
+                            prev_value += char
                         else:
                             break
-                    
-                    # 提取標籤部分
-                    label_start = len(prev_digits)
-                    labels = prev_value[label_start:].split(',')
+                    labels = current_item[len(prev_value):].split(',')
                 
-                # 添加到字典
+                # 清理並儲存每個標籤
                 for label in labels:
+                    label = label.strip()
                     if label:  # 確保標籤不為空
                         levels[label] = value
         
         # 映射標籤到標準名稱
+        standardized_levels = {}
+        
+        # 特殊處理 Gamma Flip：優先使用 GF，如果沒有則使用 GFCE
+        if 'GF' in levels:
+            standardized_levels['Gamma Flip'] = levels['GF']
+        elif 'GFCE' in levels:
+            standardized_levels['Gamma Flip'] = levels['GFCE']
+            
+        # 其他標籤的映射
         label_mapping = {
-            'GF': 'Gamma Flip',
-            'GFCE': 'Gamma Flip CE',
-            'PD': 'Put Dominate',
-            'GFLCE': 'Gamma Flip CE',
+            'GFCE': 'Gamma Flip CE',      # Gamma Flip CE
+            'GFLCE': 'Gamma Field CE',    # Gamma Field CE (不是 Gamma Flip CE)
+            'PD': 'Put Dominate',         # Put Dominate
+            'CD': 'Call Dominate',        # Call Dominate
+            'PW': 'Put Wall',             # Put Wall
+            'CW': 'Call Wall',            # Call Wall
+            'KD': 'Key Delta',            # Key Delta
+            'LG': 'Large Gamma',          # Large Gamma
+            'IM+': 'Implied Movement +σ',  # Implied Movement +σ
+            'IM-': 'Implied Movement -σ',  # Implied Movement -σ
+            'IM2+': 'Implied Movement +2σ', # Implied Movement +2σ
+            'IM2-': 'Implied Movement -2σ', # Implied Movement -2σ
         }
         
         # 轉換標籤
-        standardized_levels = {}
         for label, value in levels.items():
-            standard_label = label_mapping.get(label, label)
-            standardized_levels[standard_label] = value
+            if label in label_mapping:
+                standard_label = label_mapping[label]
+                if standard_label != 'Gamma Flip':  # 避免重複添加 Gamma Flip
+                    standardized_levels[standard_label] = value
         
         # 調試輸出
-        print(f"解析結果 {stock}: Gamma Flip={standardized_levels.get('Gamma Flip')}, Gamma Flip CE={standardized_levels.get('Gamma Flip CE')}, Put Dominate={standardized_levels.get('Put Dominate')}")
+        print(f"解析結果 {stock}: Gamma Flip={standardized_levels.get('Gamma Flip')}, Gamma Flip CE={standardized_levels.get('Gamma Flip CE')}, Gamma Field CE={standardized_levels.get('Gamma Field CE')}, Put Dominate={standardized_levels.get('Put Dominate')}")
             
         return stock, standardized_levels
     except Exception as e:
@@ -111,7 +126,7 @@ def get_real_time_price(symbol):
 def create_market_table(market_data):
     """創建市場數據表格圖片"""
     # 定義表格數據
-    columns = ['Symbol', 'Current Price', 'Gamma Flip', 'Gamma Flip CE', 'Put Dominate', 'PD vs Prev', 'Daily Gamma Env', 'All Contracts Gamma Env']
+    columns = ['Symbol', 'Current Price', 'Gamma Flip', 'Gamma Flip CE', 'GF vs Prev', 'Daily Gamma Env', 'All Contracts Gamma Env']
     
     # 準備數據
     data = []
@@ -122,102 +137,68 @@ def create_market_table(market_data):
         current_price = item.get('current_price', None)
         gamma_flip = item.get('gamma_flip', None)
         gamma_flip_ce = item.get('gamma_flip_ce', None)
-        put_dominate = item.get('put_dominate', None)
-        prev_put_dominate = item.get('prev_put_dominate', None)
-        prev_prev_put_dominate = item.get('prev_prev_put_dominate', None)
+        prev_gamma_flip = item.get('prev_gamma_flip', None)
+        prev_prev_gamma_flip = item.get('prev_prev_gamma_flip', None)
         prev_day_price = item.get('prev_day_price', None)
         
-        # 計算 Put Dominate 變化
-        pd_change = ""
-        pd_pattern_found = False  # 用於標記是否已找到某種模式
+        # 計算 Gamma Flip 變化
+        gf_change = ""
+        gf_pattern_found = False  # 用於標記是否已找到某種模式
         
-        if put_dominate is not None and prev_put_dominate is not None:
-            diff = put_dominate - prev_put_dominate
+        print(f"DEBUG - {stock} 的 Gamma Flip 數據:")
+        print(f"  當前: {gamma_flip}")
+        print(f"  昨日: {prev_gamma_flip}")
+        print(f"  前日: {prev_prev_gamma_flip}")
+        
+        if gamma_flip is not None and prev_gamma_flip is not None:
+            diff = gamma_flip - prev_gamma_flip
             if abs(diff) < 0.01:  # 考慮浮點數誤差
-                pd_change = "Same"
+                gf_change = "Same"
+                print(f"  計算結果: Same (diff={diff})")
             elif diff > 0:
-                pd_change = f"+{diff:.2f}"
+                gf_change = f"+{diff:.2f}"
+                print(f"  計算結果: +{diff:.2f}")
             else:
-                pd_change = f"{diff:.2f}"
-
-            # 檢查V型反轉（看漲）
-            if (not pd_pattern_found and
-                prev_prev_put_dominate is not None and 
-                prev_prev_put_dominate > prev_put_dominate and 
-                put_dominate > prev_put_dominate and
-                abs(diff) > 1.0):  # 使用絕對值變化
-                special_notes.append({
-                    'stock': stock,
-                    'type': 'V型反轉',
-                    'priority': 1,
-                    'message': f"🚀 {stock}: Put Dominate V型反轉向上\n   {prev_prev_put_dominate:.2f} ↘️ {prev_put_dominate:.2f} ↗️ {put_dominate:.2f}"
-                })
-                pd_pattern_found = True
-
-            # 檢查倒V型反轉（看跌）
-            if (not pd_pattern_found and
-                prev_prev_put_dominate is not None and 
-                prev_prev_put_dominate < prev_put_dominate and 
-                put_dominate < prev_put_dominate and
-                abs(diff) > 1.0):  # 使用絕對值變化
-                special_notes.append({
-                    'stock': stock,
-                    'type': '倒V型反轉',
-                    'priority': 2,
-                    'message': f"📉 {stock}: Put Dominate 倒V型反轉向下\n   {prev_prev_put_dominate:.2f} ↗️ {prev_put_dominate:.2f} ↘️ {put_dominate:.2f}"
-                })
-                pd_pattern_found = True
-
-            # 檢查止跌（連續下跌後橫盤）
-            if (not pd_pattern_found and
-                prev_prev_put_dominate is not None and 
-                prev_prev_put_dominate > prev_put_dominate and  # 前天到昨天下跌
-                abs(diff) < 0.5):  # 今天和昨天變化很小
-                special_notes.append({
-                    'stock': stock,
-                    'type': '止跌',
-                    'priority': 3,
-                    'message': f"🛟 {stock}: Put Dominate 可能止跌\n   {prev_prev_put_dominate:.2f} ↘️ {prev_put_dominate:.2f} ➡️ {put_dominate:.2f}"
-                })
-                pd_pattern_found = True
-
-            # 檢查漲不動（連續上漲後橫盤）
-            if (not pd_pattern_found and
-                prev_prev_put_dominate is not None and 
-                prev_prev_put_dominate < prev_put_dominate and  # 前天到昨天上漲
-                abs(diff) < 0.5):  # 今天和昨天變化很小
-                special_notes.append({
-                    'stock': stock,
-                    'type': '漲不動',
-                    'priority': 4,
-                    'message': f"⚠️ {stock}: Put Dominate 可能漲不動\n   {prev_prev_put_dominate:.2f} ↗️ {prev_put_dominate:.2f} ➡️ {put_dominate:.2f}"
-                })
-                pd_pattern_found = True
+                gf_change = f"{diff:.2f}"
+                print(f"  計算結果: {diff:.2f}")
+        else:
+            print(f"  計算結果: 空白 (原因: gamma_flip={gamma_flip}, prev_gamma_flip={prev_gamma_flip})")
         
         # 判斷Gamma環境
         daily_gamma = 'Positive' if gamma_flip_ce and current_price and current_price > gamma_flip_ce else 'Negative'
         all_gamma = 'Positive' if gamma_flip and current_price and current_price > gamma_flip else 'Negative'
         
         # 檢查是否首次跌破 Gamma Flip
-        if current_price and gamma_flip and prev_day_price:
-            if current_price < gamma_flip and prev_day_price > gamma_flip:
-                special_notes.append({
-                    'stock': stock,
-                    'type': 'Gamma Flip 突破',
-                    'priority': 0,  # 最高優先級
-                    'message': f"💥 {stock}: 現價首次跌破 Gamma Flip\n   價格: {prev_day_price:.2f} ↘️ {current_price:.2f}\n   Gamma Flip: {gamma_flip:.2f}"
-                })
+        if (current_price and prev_day_price and gamma_flip and
+            prev_day_price > gamma_flip and current_price < gamma_flip):
+            special_notes.append({
+                'stock': stock,
+                'type': '跌破GF',
+                'priority': 0,  # 最高優先級
+                'message': f" {stock}: 價格跌破 Gamma Flip\n   昨收: {prev_day_price:.2f} ➡️ 現價: {current_price:.2f}\n   Gamma Flip: {gamma_flip:.2f}"
+            })
         
-        data.append([
+        # 檢查是否首次突破 Gamma Flip
+        if (current_price and prev_day_price and gamma_flip and
+            prev_day_price < gamma_flip and current_price > gamma_flip):
+            special_notes.append({
+                'stock': stock,
+                'type': '突破GF',
+                'priority': 0,  # 最高優先級
+                'message': f" {stock}: 價格突破 Gamma Flip\n   昨收: {prev_day_price:.2f} ➡️ 現價: {current_price:.2f}\n   Gamma Flip: {gamma_flip:.2f}"
+            })
+
+        # 添加到表格數據
+        row = [
             stock,
             f"{current_price:.2f}" if current_price else "N/A",
             f"{gamma_flip:.2f}" if gamma_flip else "N/A",
             f"{gamma_flip_ce:.2f}" if gamma_flip_ce else "N/A",
-            f"{put_dominate:.2f}" if put_dominate else "N/A",
-            pd_change,
+            gf_change,
             daily_gamma,
             all_gamma
-        ])
+        ]
+        data.append(row)
     
     # 按優先級排序特殊情況提醒
     special_notes.sort(key=lambda x: (x['priority'], x['stock']))
@@ -253,11 +234,11 @@ def create_market_table(market_data):
     # 設置單元格顏色
     for i, row in enumerate(data):
         for j, cell in enumerate(row):
-            if j == 6 or j == 7:  # Gamma環境列
+            if j == 5 or j == 6:  # Gamma環境列
                 cell_color = 'lightblue' if cell == 'Positive' else 'lightcoral'
                 table[(i+1, j)].set_facecolor(cell_color)
                 table[(i+1, j)].set_text_props(color='white', weight='bold')
-            elif j == 5:  # Put Dominate 變化列
+            elif j == 4:  # GF變化列
                 if cell.startswith('+'):
                     table[(i+1, j)].set_facecolor('lightgreen')
                     table[(i+1, j)].set_text_props(weight='bold')
@@ -348,6 +329,7 @@ async def send_market_status():
     prev_data = {}
     if os.path.exists(prev_file):
         try:
+            print(f"正在讀取昨日數據文件: {prev_file}")
             with open(prev_file, 'r') as f:
                 for line in f:
                     result = parse_price_levels(line.strip())
@@ -358,6 +340,7 @@ async def send_market_status():
                             'gamma_flip_ce': levels.get('Gamma Flip CE'),
                             'put_dominate': levels.get('Put Dominate')
                         }
+                        print(f"昨日數據 - {stock}: Gamma Flip = {levels.get('Gamma Flip')}")
         except Exception as e:
             print(f"讀取昨日數據時發生錯誤: {e}")
     
@@ -438,9 +421,9 @@ async def send_market_status():
                 prev_put_dominate = prev_data[stock].get('put_dominate')
             
             # 獲取前前日數據
-            prev_prev_put_dominate = None
+            prev_prev_gamma_flip = None
             if stock in prev_prev_data:
-                prev_prev_put_dominate = prev_prev_data[stock].get('put_dominate')
+                prev_prev_gamma_flip = prev_prev_data[stock].get('gamma_flip')
             
             # 獲取昨日價格
             prev_day_price = prev_day_prices.get(stock, None)
@@ -451,11 +434,8 @@ async def send_market_status():
                 'current_price': current_price,
                 'gamma_flip': gamma_flip,
                 'gamma_flip_ce': gamma_flip_ce,
-                'put_dominate': put_dominate,
                 'prev_gamma_flip': prev_gamma_flip,
-                'prev_gamma_flip_ce': prev_gamma_flip_ce,
-                'prev_put_dominate': prev_put_dominate,
-                'prev_prev_put_dominate': prev_prev_put_dominate,
+                'prev_prev_gamma_flip': prev_prev_gamma_flip,
                 'prev_day_price': prev_day_price
             }
             
@@ -488,9 +468,9 @@ async def send_market_status():
         prev_date = datetime.strptime(prev_day_str, "%Y%m%d").strftime("%Y/%m/%d")
         message = f"**市場 Gamma 環境報告** ({today_date})\n"
         message += f"與前一交易日 ({prev_date}) 比較\n"
-        message += f"綠色: Put Dominate 比前一日高 (看漲)\n"
-        message += f"紅色: Put Dominate 比前一日低 (看跌)\n"
-        message += f"黃色: Put Dominate 與前一日相同\n"
+        message += f"綠色: Gamma Flip 比前一日高 (看漲)\n"
+        message += f"紅色: Gamma Flip 比前一日低 (看跌)\n"
+        message += f"黃色: Gamma Flip 與前一日相同\n"
         
         # 添加特殊情況說明
         if special_notes:

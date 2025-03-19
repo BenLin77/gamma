@@ -1,0 +1,78 @@
+# 交易配置文件
+# 每個商品可以設定多個交易規則
+# 每個規則包含：
+#   - 條件合約（用於判斷進場）
+#   - 交易合約（實際交易的商品）
+#   - 進場條件（價格和類型）
+#   - 停損設定（點數或百分比）
+#   - 目標獲利（可選）
+
+orders:
+  - name: "MNQ_PUT_DOM"  # 規則名稱
+    condition:
+      symbol: "QQQ"      # 條件合約
+      type: "PUT_DOM"    # 進場類型：PUT_DOM, CALL_DOM, PUT_WALL, CALL_WALL 等
+      direction: "LONG"   # LONG 表示低於等於時買入，HIGH 表示高於等於時買入
+    trade:
+      symbol: "MNQ"      # 交易合約
+      action: "BUY"      # BUY 或 SELL
+      quantity: 1        # 交易數量
+      stop_loss: 200     # 停損點數
+      take_profit: 400   # 目標獲利點數（可選）
+
+  - name: "MNQ_CALL_DOM"
+    condition:
+      symbol: "QQQ"
+      type: "CALL_DOM"
+      direction: "SHORT"
+    trade:
+      symbol: "MNQ"
+      action: "SELL"
+      quantity: 1
+      stop_loss: 200
+      take_profit: 400
+
+  - name: "MES_PUT_DOM"
+    condition:
+      symbol: "SPX"
+      type: "PUT_DOM"
+      direction: "LONG"
+    trade:
+      symbol: "MES"
+      action: "BUY"
+      quantity: 1
+      stop_loss: 20
+      take_profit: 40
+
+  - name: "MES_CALL_DOM"
+    condition:
+      symbol: "SPX"
+      type: "CALL_DOM"
+      direction: "SHORT"
+    trade:
+      symbol: "MES"
+      action: "SELL"
+      quantity: 1
+      stop_loss: 20
+      take_profit: 40
+
+order_conditions:
+  - symbol: "QQQ"
+    price: 520
+    action: "BUY"
+    quantity: 1
+    contract_type: "MNQ"
+    order_type: "MKT"
+    stop_loss_points: 200
+    target_profit_points: 400  # 可選的獲利目標
+    time_in_force: "GTC"
+    transmit: true
+
+# 價格類型定義
+price_types:
+  PUT_DOM: "Put Dominate"
+  CALL_DOM: "Call Dominate"
+  PUT_WALL: "Put Wall"
+  CALL_WALL: "Call Wall"
+  GAMMA_FLIP: "Gamma Flip"
+  GAMMA_FLIP_CE: "Gamma Flip CE"

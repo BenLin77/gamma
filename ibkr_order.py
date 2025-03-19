@@ -1,9 +1,11 @@
 import re
 import time
+import yaml
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
-from ib_insync import IB, Stock, LimitOrder, Future, PriceCondition, Order, MarketOrder, Index
+from ib_insync import IB, Stock, LimitOrder, Future, PriceCondition, Order, MarketOrder, Index, StopOrder
+import argparse
 
 def parse_market_levels(text):
     """解析市場層級資訊
@@ -46,108 +48,48 @@ def parse_market_levels(text):
         'QQQ': qqq_data
     }
 
+def load_order_config():
+    """載入訂單配置"""
+    config_path = Path(__file__).parent / 'order.yaml'
+    with open(config_path, 'r', encoding='utf-8') as f:
+        return yaml.safe_load(f)
+
 def generate_limit_orders(levels):
-    """根據市場層級生成限價單清單
-    
-    Args:
-        levels (dict): 市場層級資訊
-        
-    Returns:
-        list: 限價單清單
-    """
+    """根據市場層級生成限價單清單"""
     orders = []
+    config = load_order_config()
+    price_types = config['price_types']
     
-    # QQQ交易信號 (使用QQQ價格作為條件，交易MNQ)
-    qqq = levels['QQQ']
-    
-    # 預掛買單邏輯
-    buy_levels = {
-        'Put Wall': '強支撐',
-        'Put Wall CE': '次級支撐',
-        'Large Gamma 1': '大Gamma支撐',
-        'Large Gamma 2': '次級大Gamma支撐',
-        'Put Dominate': 'Put主導支撐'
-    }
-    
-    # 預掛賣單邏輯
-    sell_levels = {
-        'Call Wall': '強壓力',
-        'Call Wall CE': '次級壓力',
-        'Call Dominate': 'Call主導壓力',
-        'Gamma Field': 'Gamma場壓力',
-        'Gamma Field CE': '次級Gamma場壓力'
-    }
-    
-    # 生成MNQ買單 (使用QQQ價格作為條件)
-    for level_name, description in buy_levels.items():
-        if level_name in qqq:
-            orders.append({
-                'symbol': 'MNQ',  # 交易MNQ
-                'condition_symbol': 'QQQ',  # 使用QQQ價格作為條件
-                'condition_price': qqq[level_name],  # QQQ的價格條件
-                'action': 'BUY',
-                'quantity': 1,
-                'reason': f'當QQQ到達{description}位置 {qqq[level_name]} 時買入MNQ'
-            })
-    
-    # 生成MNQ賣單
-    for level_name, description in sell_levels.items():
-        if level_name in qqq:
-            orders.append({
-                'symbol': 'MNQ',  # 交易MNQ
-                'condition_symbol': 'QQQ',  # 使用QQQ價格作為條件
-                'condition_price': qqq[level_name],  # QQQ的價格條件
-                'action': 'SELL',
-                'quantity': 1,
-                'reason': f'當QQQ到達{description}位置 {qqq[level_name]} 時賣出MNQ'
-            })
-    
-    # SPX交易信號 (使用SPX價格作為條件，交易MES)
-    spx = levels['SPX']
-    
-    # 生成MES買單 (使用SPX價格作為條件)
-    for level_name, description in buy_levels.items():
-        if level_name in spx:
-            orders.append({
-                'symbol': 'MES',  # 交易MES
-                'condition_symbol': 'SPX',  # 使用SPX價格作為條件
-                'condition_price': spx[level_name],  # SPX的價格條件
-                'action': 'BUY',
-                'quantity': 1,
-                'reason': f'當SPX到達{description}位置 {spx[level_name]} 時買入MES'
-            })
-    
-    # 生成MES賣單
-    for level_name, description in sell_levels.items():
-        if level_name in spx:
-            orders.append({
-                'symbol': 'MES',  # 交易MES
-                'condition_symbol': 'SPX',  # 使用SPX價格作為條件
-                'condition_price': spx[level_name],  # SPX的價格條件
-                'action': 'SELL',
-                'quantity': 1,
-                'reason': f'當SPX到達{description}位置 {spx[level_name]} 時賣出MES'
-            })
+    for order_config in config['orders']:
+        condition_symbol = order_config['condition']['symbol']
+        price_type = price_types[order_config['condition']['type']]
+        
+        # 檢查是否有對應的價格水平
+        if price_type not in levels[condition_symbol]:
+            continue
+            
+        condition_price = levels[condition_symbol][price_type]
+        trade_info = order_config['trade']
+        
+        # 生成主訂單
+        orders.append({
+            'symbol': trade_info['symbol'],
+            'condition_symbol': condition_symbol,
+            'condition_price': condition_price,
+            'action': trade_info['action'],
+            'quantity': trade_info['quantity'],
+            'reason': f'當{condition_symbol}到達{price_type}位置 {condition_price} 時{"買入" if trade_info["action"] == "BUY" else "賣出"}{trade_info["symbol"]}',
+            'stop_loss': trade_info.get('stop_loss'),
+            'take_profit': trade_info.get('take_profit'),
+            'is_main_order': True
+        })
     
     return orders
 
 def place_limit_order(ib, order_info):
-    """下條件限價單
-    
-    Args:
-        ib: IB連接實例
-        order_info: 訂單信息，包含：
-            - symbol: 交易商品代碼
-            - condition_symbol: 條件商品代碼
-            - condition_price: 條件價格
-            - action: 買賣方向
-            - quantity: 數量
-    """
-    from ib_insync import Future, PriceCondition, Order, MarketOrder
-    
+    """下條件限價單"""
     # 設定交易合約
     if order_info['symbol'] in ['MNQ', 'MES']:
-        # 獲取最近月份的期貨合約
         contract = Future(order_info['symbol'], exchange='CME')
         ib.qualifyContracts(contract)
         
@@ -155,31 +97,63 @@ def place_limit_order(ib, order_info):
     if order_info['condition_symbol'] == 'QQQ':
         condition_contract = Stock(order_info['condition_symbol'], 'SMART', 'USD')
     else:  # SPX
-        from ib_insync import Index
         condition_contract = Index(order_info['condition_symbol'], 'CBOE', 'USD')
     ib.qualifyContracts(condition_contract)
     
-    # 創建條件市價單（當條件滿足時以市價執行）
-    order = MarketOrder(order_info['action'], order_info['quantity'])
+    # 創建主訂單（條件市價單）
+    main_order = MarketOrder(order_info['action'], order_info['quantity'])
     
     # 創建價格條件
-    # 對於買單，當價格低於等於條件價格時觸發
-    # 對於賣單，當價格高於等於條件價格時觸發
     is_greater = order_info['action'] == 'SELL'
-    
     price_condition = PriceCondition(
         price=order_info['condition_price'],
         conId=condition_contract.conId,
         exchange=condition_contract.exchange,
         isMore=is_greater
     )
+    main_order.conditions.append(price_condition)
     
-    # 將條件添加到訂單
-    order.conditions.append(price_condition)
+    # 下主訂單
+    main_trade = ib.placeOrder(contract, main_order)
+    print(f"已下主訂單: {main_trade}")
     
-    # 下單
-    trade = ib.placeOrder(contract, order)
-    return trade
+    # 如果有設定停損
+    if order_info.get('stop_loss'):
+        # 計算停損價格
+        stop_points = order_info['stop_loss']
+        if order_info['action'] == 'BUY':
+            # 買入時，停損價格 = 條件價格 - 停損點數
+            stop_price = order_info['condition_price'] - stop_points
+            stop_action = 'SELL'
+        else:
+            # 賣出時，停損價格 = 條件價格 + 停損點數
+            stop_price = order_info['condition_price'] + stop_points
+            stop_action = 'BUY'
+            
+        # 創建停損單
+        stop_order = StopOrder(stop_action, order_info['quantity'], stop_price)
+        stop_trade = ib.placeOrder(contract, stop_order)
+        print(f"已下停損單: {stop_trade}, 停損價格: {stop_price}")
+    
+    # 如果有設定目標獲利
+    if order_info.get('take_profit'):
+        # 計算目標價格
+        profit_points = order_info['take_profit']
+        if order_info['action'] == 'BUY':
+            # 買入時，目標價格 = 條件價格 + 獲利點數
+            profit_price = order_info['condition_price'] + profit_points
+            profit_action = 'SELL'
+        else:
+            # 賣出時，目標價格 = 條件價格 - 獲利點數
+            profit_price = order_info['condition_price'] - profit_points
+            profit_action = 'BUY'
+            
+        # 創建限價獲利單
+        profit_order = LimitOrder(profit_action, order_info['quantity'], profit_price)
+        profit_trade = ib.placeOrder(contract, profit_order)
+        print(f"已下獲利單: {profit_trade}, 目標價格: {profit_price}")
+    
+    return main_trade
 
 def get_latest_tvcode_file():
     """獲取最新的tvcode文件
@@ -215,51 +189,136 @@ def get_latest_tvcode_file():
         print(f"讀取文件時出錯: {str(e)}")
         return None
 
-def main():
-    # 讀取最新的tvcode文件
-    text = get_latest_tvcode_file()
-    if not text:
-        print("無法獲取市場層級資訊，程式結束")
-        return
+def create_contract(symbol, contract_type):
+    """創建合約對象"""
+    if contract_type == "MNQ":
+        # 使用當前年月
+        from datetime import datetime
+        current_date = datetime.now()
+        # 找到最近的季月（3,6,9,12月）
+        month = ((current_date.month - 1) // 3 * 3 + 3)
+        year = current_date.year
+        if month < current_date.month:
+            year += 1
+        contract = Future('MNQ', f'{year}{month:02d}', 'CME')
+        contract.multiplier = "2"  # MNQ 的乘數
+        contract.currency = "USD"
+    else:
+        contract = Stock(symbol, 'SMART', 'USD')
+    return contract
+
+def create_order(action, quantity, order_type='MKT', stop_price=None):
+    """創建訂單對象"""
+    if order_type == 'MKT':
+        order = MarketOrder(action, quantity)
+    elif order_type == 'STP':
+        order = StopOrder(action, quantity, stop_price)
+    
+    order.transmit = True
+    order.outsideRth = True
+    return order
+
+def place_bracket_order(ib, contract, entry_order, stop_loss_points):
+    """下放括號訂單（包含進場和停損）"""
+    # 下市價單
+    print("下放市價單...")
+    trade = ib.placeOrder(contract, entry_order)
+    
+    # 等待市價單成交
+    while not trade.isDone():
+        ib.sleep(1)
+    
+    if trade.orderStatus.status == 'Filled':
+        fill_price = trade.orderStatus.avgFillPrice
+        print(f"市價單已成交，價格: {fill_price}")
         
-    # 解析市場層級
-    market_levels = parse_market_levels(text)
-    
-    # 生成限價單清單
-    orders = generate_limit_orders(market_levels)
-    
-    if not orders:
-        print("沒有生成任何訂單")
-        return
+        # 使用成交價格計算停損
+        if entry_order.action == 'BUY':
+            stop_loss_price = fill_price - stop_loss_points
+        else:
+            stop_loss_price = fill_price + stop_loss_points
         
-    print(f"共生成 {len(orders)} 個條件單")
-    for order in orders:
-        print(f"- {order['symbol']} {order['action']}: {order['reason']}")
+        print(f"設置停損價格: {stop_loss_price}")
+        
+        # 創建停損訂單
+        stop_order = create_order(
+            'SELL' if entry_order.action == 'BUY' else 'BUY',
+            entry_order.totalQuantity,
+            'STP',
+            stop_loss_price
+        )
+        
+        # 下停損單
+        stop_trade = ib.placeOrder(contract, stop_order)
+        print(f"停損訂單已下放")
+    else:
+        print(f"訂單狀態: {trade.orderStatus.status}")
     
-    # 詢問是否執行下單
-    response = input("是否執行下單？(y/n): ")
-    if response.lower() != 'y':
-        print("取消下單")
+    return trade
+
+def main(test_mode=False):
+    # 讀取配置
+    try:
+        with open('order.yaml', 'r') as f:
+            config = yaml.safe_load(f)
+    except Exception as e:
+        print(f"讀取 order.yaml 時出錯: {str(e)}")
         return
     
-    # 連接 IBKR API
+    # 連接到 IB Gateway
     ib = IB()
     try:
         ib.connect('127.0.0.1', 7497, clientId=1)
         
-        # 下條件單
-        for order in orders:
-            print(f"準備下單: {order['reason']}")
-            trade = place_limit_order(ib, order)
-            print(f"已下單: {trade}")
-            time.sleep(1)  # 避免請求過快
+        # 檢查帳戶類型
+        account = ib.managedAccounts()[0]
+        print(f"\n帳戶號碼: {account}")
+        
+        # Paper Trading 帳戶通常以 'DU' 開頭
+        is_paper = account.startswith('DU')
+        print(f"\n當前連接到{'模擬帳戶 (Paper Trading)' if is_paper else '實盤帳戶 (Live Trading)'}")
+        
+        # 獲取帳戶餘額
+        account_value = ib.accountSummary(account)
+        net_liq = next(v.value for v in account_value if v.tag == 'NetLiquidation')
+        print(f"帳戶淨值: ${net_liq}")
+        
+        for condition in config.get('order_conditions', []):
+            # 創建合約
+            contract = create_contract(condition['symbol'], condition['contract_type'])
             
-    except Exception as e:
-        print(f"下單出錯: {str(e)}")
+            # 創建進場訂單
+            entry_order = create_order(
+                condition['action'],
+                condition['quantity'],
+                condition['order_type']
+            )
+            
+            if test_mode:
+                print(f"\n測試模式 - 將下放以下訂單：")
+                print(f"合約: {condition['contract_type']}")
+                print(f"動作: {condition['action']}")
+                print(f"數量: {condition['quantity']}")
+                print(f"停損點數: {condition['stop_loss_points']}")
+            else:
+                print(f"\n準備下放實際訂單...")
+                # 下放訂單
+                trade = place_bracket_order(
+                    ib,
+                    contract,
+                    entry_order,
+                    condition['stop_loss_points']
+                )
+                
+                # 等待訂單更新
+                ib.sleep(1)
+        
     finally:
-        # 斷開連接
-        if ib.isConnected():
-            ib.disconnect()
+        ib.disconnect()
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--test', action='store_true', help='測試模式，不實際下單')
+    args = parser.parse_args()
+    
+    main(test_mode=args.test)

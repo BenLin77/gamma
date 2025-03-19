@@ -62,10 +62,11 @@ def process_ticker(page, ticker, download_dir):
         download = download_info.value
 
         # 處理 Gamma 圖片
-        ticker_dir = os.path.join(download_dir, ticker)
+        today_date = datetime.now().strftime("%Y%m%d")
+        ticker_dir = os.path.join(download_dir, ticker.lower())
+        os.makedirs(ticker_dir, exist_ok=True)
         gamma_dir = os.path.join(ticker_dir, "gamma")
         os.makedirs(gamma_dir, exist_ok=True)
-        today_date = datetime.today().strftime('%Y%m%d')
         new_filename = f"Gamma_{ticker}_{today_date}.png"
         new_filepath = os.path.join(gamma_dir, new_filename)
         shutil.move(download.path(), new_filepath)
@@ -99,17 +100,22 @@ def process_ticker(page, ticker, download_dir):
 
         tvcode_dir = os.path.join(download_dir, "tvcode")
         os.makedirs(tvcode_dir, exist_ok=True)
-        text_filename = f"tvcode_{today_date}.txt"
-        text_filepath = os.path.join(tvcode_dir, text_filename)
+        tvcode_filename = f"tvcode_{today_date}.txt"
+        tvcode_filepath = os.path.join(tvcode_dir, tvcode_filename)
 
-        with open(text_filepath, "a") as text_file:
-            text_file.write(text_content + "\n\n")
+        # 如果檔案存在，讀取現有內容
+        existing_content = ""
+        if os.path.exists(tvcode_filepath):
+            with open(tvcode_filepath, 'r') as f:
+                existing_content = f.read()
 
-        page.keyboard.press('F5', delay=3000)
-        page.reload()
-        time.sleep(5)
+        # 檢查是否已經包含該股票的數據
+        if text_content not in existing_content:
+            # 追加新的內容
+            with open(tvcode_filepath, 'a') as f:
+                f.write(text_content + "\n")
+
         return True
-
     except Exception as e:
         print(f"處理 {ticker} 時發生錯誤: {str(e)}")
         return False
@@ -160,4 +166,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
