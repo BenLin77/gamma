@@ -174,11 +174,23 @@ if __name__ == "__main__":
         # 如果使用覆蓋模式，輸出文件就是輸入文件
         output_file = input_file
     else:
-        # 使用原來的命名方式
-        output_file = os.path.join(base_path, f"short_{filename}")
+        # 修改命名方式：轉換後的檔案使用原始檔名，原始檔案加上 orig 字樣
         if args.reverse:
-            input_file = os.path.join(base_path, f"short_{filename}")
-            output_file = os.path.join(base_path, f"original_{filename}")
+            # 反向轉換時，輸入檔案是原始檔案，輸出檔案是原始格式加上 orig 字樣
+            input_file = os.path.join(base_path, filename)
+            output_file = os.path.join(base_path, f"orig_{filename}")
+        else:
+            # 正向轉換時，輸入檔案是原始檔案，輸出檔案直接使用原始檔名
+            # 先備份原始檔案
+            orig_backup = os.path.join(base_path, f"orig_{filename}")
+            if not os.path.exists(orig_backup):
+                try:
+                    import shutil
+                    shutil.copy2(input_file, orig_backup)
+                    print(f"已備份原始檔案至 {orig_backup}")
+                except Exception as e:
+                    print(f"警告：備份原始檔案時出錯: {str(e)}")
+            output_file = input_file
     
     # 檢查輸入文件是否存在
     if not os.path.exists(input_file):
@@ -213,4 +225,4 @@ if __name__ == "__main__":
         if args.debug:
             import traceback
             traceback.print_exc()
-        exit(1) 
+        exit(1)
