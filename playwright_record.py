@@ -93,7 +93,7 @@ def process_ticker(page, ticker, download_dir):
         page.get_by_text("Smile", exact=True).click()
         page.get_by_role("option", name="TV Code").click()
         page.get_by_role("button", name="Enter").click()
-        time.sleep(45)
+        time.sleep(55)
 
         page.mouse.move(300, 300)
         text_content = page.inner_text(".pt-5 p")
