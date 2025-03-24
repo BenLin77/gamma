@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import matplotlib.pyplot as plt
 import numpy as np
 from io import BytesIO
+import json
 
 # 載入環境變數
 load_dotenv()
@@ -126,7 +127,7 @@ def get_real_time_price(symbol):
 def create_market_table(market_data):
     """創建市場數據表格圖片"""
     # 定義表格數據
-    columns = ['Symbol', 'Current Price', 'Gamma Flip', 'Gamma Flip CE', 'GF vs Prev', 'Daily Gamma Env', 'All Contracts Gamma Env']
+    columns = ['Symbol', 'Current Price', 'Gamma CE Env', 'Gamma Env', 'GF vs Prev', 'Prev GF', 'Gamma Flip', 'Gamma Flip CE', 'Prev GF CE']
     
     # 準備數據
     data = []
@@ -138,8 +139,11 @@ def create_market_table(market_data):
         gamma_flip = item.get('gamma_flip', None)
         gamma_flip_ce = item.get('gamma_flip_ce', None)
         prev_gamma_flip = item.get('prev_gamma_flip', None)
+        prev_gamma_flip_ce = item.get('prev_gamma_flip_ce', None)
         prev_prev_gamma_flip = item.get('prev_prev_gamma_flip', None)
         prev_day_price = item.get('prev_day_price', None)
+        gamma_ce_env_days = item.get('gamma_ce_env_days', 0)
+        gamma_env_days = item.get('gamma_env_days', 0)
         
         # 計算 Gamma Flip 變化
         gf_change = ""
@@ -168,6 +172,16 @@ def create_market_table(market_data):
         daily_gamma = 'Positive' if gamma_flip_ce and current_price and current_price > gamma_flip_ce else 'Negative'
         all_gamma = 'Positive' if gamma_flip and current_price and current_price > gamma_flip else 'Negative'
         
+        # 格式化Gamma環境顯示（加上維持天數）
+        daily_gamma_display = f"{daily_gamma}"
+        all_gamma_display = f"{all_gamma}"
+        
+        if gamma_ce_env_days > 0:
+            daily_gamma_display = f"{daily_gamma} ({gamma_ce_env_days}d)"
+        
+        if gamma_env_days > 0:
+            all_gamma_display = f"{all_gamma} ({gamma_env_days}d)"
+        
         # 檢查是否首次跌破 Gamma Flip
         if (current_price and prev_day_price and gamma_flip and
             prev_day_price > gamma_flip and current_price < gamma_flip):
@@ -192,11 +206,13 @@ def create_market_table(market_data):
         row = [
             stock,
             f"{current_price:.2f}" if current_price else "N/A",
+            daily_gamma_display,
+            all_gamma_display,
+            gf_change,
+            f"{prev_gamma_flip:.2f}" if prev_gamma_flip else "N/A",
             f"{gamma_flip:.2f}" if gamma_flip else "N/A",
             f"{gamma_flip_ce:.2f}" if gamma_flip_ce else "N/A",
-            gf_change,
-            daily_gamma,
-            all_gamma
+            f"{prev_gamma_flip_ce:.2f}" if prev_gamma_flip_ce else "N/A"
         ]
         data.append(row)
     
@@ -234,8 +250,10 @@ def create_market_table(market_data):
     # 設置單元格顏色
     for i, row in enumerate(data):
         for j, cell in enumerate(row):
-            if j == 5 or j == 6:  # Gamma環境列
-                cell_color = 'lightblue' if cell == 'Positive' else 'lightcoral'
+            if j == 2 or j == 3:  # Gamma環境列
+                # 檢查是否包含天數信息
+                is_positive = cell.startswith('Positive')
+                cell_color = 'lightblue' if is_positive else 'lightcoral'
                 table[(i+1, j)].set_facecolor(cell_color)
                 table[(i+1, j)].set_text_props(color='white', weight='bold')
             elif j == 4:  # GF變化列
@@ -271,6 +289,16 @@ async def send_market_status():
     prev_prev_day = get_previous_trading_day(prev_day)
     prev_prev_day_str = prev_prev_day.strftime("%Y%m%d")
     prev_prev_file = os.path.join(base_path, f"tvcode_{prev_prev_day_str}.txt")
+    
+    gamma_history_file = os.path.join(base_path, "gamma_environment_history.json")
+    gamma_history = {}
+    try:
+        with open(gamma_history_file, 'r') as f:
+            gamma_history = json.load(f)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"讀取Gamma環境歷史數據時發生錯誤: {e}")
     
     # 檢查今日文件是否存在
     if not os.path.exists(today_file):
@@ -321,10 +349,6 @@ async def send_market_status():
     
     market_data = []
     
-    # 讀取今日數據
-    with open(today_file, 'r') as f:
-        today_lines = f.readlines()
-        
     # 讀取昨日數據（如果存在）
     prev_data = {}
     if os.path.exists(prev_file):
@@ -343,6 +367,12 @@ async def send_market_status():
                         print(f"昨日數據 - {stock}: Gamma Flip = {levels.get('Gamma Flip')}")
         except Exception as e:
             print(f"讀取昨日數據時發生錯誤: {e}")
+    
+    # 建立昨日數據的映射關係
+    prev_gamma_flips = {}
+    for stock, data in prev_data.items():
+        prev_gamma_flips[stock] = data.get('gamma_flip')
+        print(f"設置 {stock} 的昨日 Gamma Flip: {data.get('gamma_flip')}")
     
     # 讀取前前日數據（如果存在）
     prev_prev_data = {}
@@ -393,6 +423,9 @@ async def send_market_status():
         print(f"批量下載股價數據時發生錯誤: {e}")
     
     # 處理每個股票
+    with open(today_file, 'r') as f:
+        today_lines = f.readlines()
+    
     for line in today_lines:
         try:
             result = parse_price_levels(line.strip())
@@ -411,14 +444,16 @@ async def send_market_status():
             put_dominate = levels.get('Put Dominate')
             
             # 獲取昨日數據
-            prev_gamma_flip = None
+            prev_gamma_flip = prev_gamma_flips.get(stock)
             prev_gamma_flip_ce = None
             prev_put_dominate = None
             
             if stock in prev_data:
-                prev_gamma_flip = prev_data[stock].get('gamma_flip')
                 prev_gamma_flip_ce = prev_data[stock].get('gamma_flip_ce')
                 prev_put_dominate = prev_data[stock].get('put_dominate')
+            elif stock in prev_prev_data:  # 如果昨日數據不存在，嘗試使用前前日數據
+                prev_gamma_flip_ce = prev_prev_data[stock].get('gamma_flip_ce')
+                prev_put_dominate = prev_prev_data[stock].get('put_dominate')
             
             # 獲取前前日數據
             prev_prev_gamma_flip = None
@@ -428,6 +463,29 @@ async def send_market_status():
             # 獲取昨日價格
             prev_day_price = prev_day_prices.get(stock, None)
             
+            # 計算當前Gamma環境
+            current_gamma_ce_env = 'Positive' if gamma_flip_ce and current_price and current_price > gamma_flip_ce else 'Negative'
+            current_gamma_env = 'Positive' if gamma_flip and current_price and current_price > gamma_flip else 'Negative'
+            
+            # 初始化歷史記錄（如果不存在）
+            if stock not in gamma_history:
+                gamma_history[stock] = {
+                    'ce_env': {'status': current_gamma_ce_env, 'days': 1},
+                    'env': {'status': current_gamma_env, 'days': 1}
+                }
+            else:
+                # 更新CE環境天數
+                if gamma_history[stock]['ce_env']['status'] == current_gamma_ce_env:
+                    gamma_history[stock]['ce_env']['days'] += 1
+                else:
+                    gamma_history[stock]['ce_env'] = {'status': current_gamma_ce_env, 'days': 1}
+                
+                # 更新全部合約環境天數
+                if gamma_history[stock]['env']['status'] == current_gamma_env:
+                    gamma_history[stock]['env']['days'] += 1
+                else:
+                    gamma_history[stock]['env'] = {'status': current_gamma_env, 'days': 1}
+            
             # 添加到市場數據列表
             stock_data = {
                 'stock': stock,
@@ -435,8 +493,11 @@ async def send_market_status():
                 'gamma_flip': gamma_flip,
                 'gamma_flip_ce': gamma_flip_ce,
                 'prev_gamma_flip': prev_gamma_flip,
+                'prev_gamma_flip_ce': prev_gamma_flip_ce,
                 'prev_prev_gamma_flip': prev_prev_gamma_flip,
-                'prev_day_price': prev_day_price
+                'prev_day_price': prev_day_price,
+                'gamma_ce_env_days': gamma_history[stock]['ce_env']['days'],
+                'gamma_env_days': gamma_history[stock]['env']['days']
             }
             
             market_data.append(stock_data)
@@ -450,6 +511,13 @@ async def send_market_status():
                 pass
             print(f"處理 {current_stock} 數據時發生錯誤: {e}")
             continue
+    
+    # 保存更新後的Gamma環境歷史數據
+    try:
+        with open(gamma_history_file, 'w') as f:
+            json.dump(gamma_history, f)
+    except Exception as e:
+        print(f"保存Gamma環境歷史數據時發生錯誤: {e}")
     
     if not market_data:
         print("沒有有效的市場數據")
