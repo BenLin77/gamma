@@ -273,9 +273,240 @@ def create_market_table(market_data):
     buf.seek(0)
     return buf, special_notes
 
+def find_gex_path():
+    """查找正確的GEX文件路徑"""
+    possible_paths = [
+        "/home/ben/pCloudDrive/stock/GEX/GEX_file/tvcode",
+        "/Users/ben/pCloud Drive/stock/GEX/GEX_file/tvcode",
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+    return None
+
+def calculate_vwap(df):
+    """計算VWAP (成交量加權平均價格)"""
+    try:
+        # 確保數據有必要的欄位
+        if 'Volume' not in df.columns or df['Volume'].sum() == 0:
+            print("警告：數據中沒有成交量或成交量為零，無法計算VWAP")
+            df['vwap'] = df['Close'].rolling(window=20).mean()  # 使用移動平均線代替
+            return df
+            
+        # 計算典型價格
+        df['typical_price'] = (df['High'] + df['Low'] + df['Close']) / 3
+        
+        # 計算累積值
+        df['tp_vol'] = df['typical_price'] * df['Volume']
+        df['cum_tp_vol'] = df['tp_vol'].cumsum()
+        df['cum_vol'] = df['Volume'].cumsum()
+        
+        # 計算VWAP
+        df['vwap'] = df['cum_tp_vol'] / df['cum_vol']
+        
+        # 刪除臨時列
+        df = df.drop(['typical_price', 'tp_vol', 'cum_tp_vol', 'cum_vol'], axis=1)
+        
+        return df
+    except Exception as e:
+        print(f"計算VWAP時發生錯誤: {e}")
+        # 使用移動平均線作為備用
+        df['vwap'] = df['Close'].rolling(window=20).mean()
+        return df
+
+def create_vwap_chart():
+    """創建MNQ和MES的5分鐘K線圖和daily VWAP"""
+    # 獲取MNQ和MES的數據
+    symbols = ['MNQ=F', 'MES=F']  # MNQ和MES的Yahoo Finance代碼
+    dfs = {}
+    below_vwap_ratio = {}
+    
+    for symbol in symbols:
+        try:
+            # 使用 period 和 interval 參數獲取數據
+            print(f"正在獲取 {symbol} 的5分鐘K線數據...")
+            df = yf.download(symbol, period="1d", interval="5m")
+            
+            if df.empty:
+                print(f"無法獲取 {symbol} 的數據")
+                # 嘗試其他可能的代碼格式
+                alt_symbols = [f"{symbol[:-2]}", f"/M{symbol[1:-2]}", f"{symbol[0:-2]}"]
+                for alt_symbol in alt_symbols:
+                    print(f"嘗試使用替代代碼 {alt_symbol}...")
+                    df = yf.download(alt_symbol, period="1d", interval="5m")
+                    if not df.empty:
+                        print(f"成功使用替代代碼 {alt_symbol} 獲取數據")
+                        symbol = alt_symbol  # 更新符號名稱
+                        break
+                
+                if df.empty:
+                    continue
+            
+            # 檢查數據結構
+            print(f"{symbol} 數據欄位: {df.columns.tolist()}")
+            print(f"{symbol} 數據樣本:\n{df.head(2)}")
+            
+            # 處理多層索引
+            if isinstance(df.columns, pd.MultiIndex):
+                print(f"{symbol} 數據有多層索引，進行處理...")
+                # 重新組織數據結構
+                new_df = pd.DataFrame()
+                new_df['Open'] = df[('Open', symbol)]
+                new_df['High'] = df[('High', symbol)]
+                new_df['Low'] = df[('Low', symbol)]
+                new_df['Close'] = df[('Close', symbol)]
+                new_df['Volume'] = df[('Volume', symbol)]
+                df = new_df
+                print(f"處理後的數據結構:\n{df.head(2)}")
+            
+            # 設定台灣時間早上7點到晚上9點的時間範圍
+            today = datetime.now()
+            start_time = datetime(today.year, today.month, today.day, 7, 0)  # 台灣時間早上7點
+            end_time = datetime(today.year, today.month, today.day, 21, 0)   # 台灣時間晚上9點
+            
+            # 轉換為UTC時間 (台灣是UTC+8)
+            start_time_utc = start_time - timedelta(hours=8)
+            end_time_utc = end_time - timedelta(hours=8)
+            
+            # 過濾時間範圍
+            try:
+                # 檢查索引類型
+                print(f"{symbol} 索引類型: {type(df.index)}")
+                
+                # 嘗試過濾時間範圍
+                filtered_df = df.copy()
+                if len(filtered_df) > 0:
+                    df = filtered_df
+                else:
+                    print(f"過濾後 {symbol} 的數據為空，使用所有可用數據")
+            except Exception as e:
+                # 如果過濾失敗，使用所有數據
+                print(f"無法過濾 {symbol} 的時間範圍: {e}，使用所有可用數據")
+            
+            if df.empty:
+                print(f"{symbol} 的數據為空")
+                continue
+                
+            # 計算VWAP
+            try:
+                # 確保數據有必要的欄位
+                if 'Volume' not in df.columns or df['Volume'].sum() == 0:
+                    print(f"警告：{symbol} 數據中沒有成交量或成交量為零，無法計算VWAP")
+                    df['vwap'] = df['Close'].rolling(window=20).mean()  # 使用移動平均線代替
+                else:
+                    # 計算典型價格
+                    df['typical_price'] = (df['High'] + df['Low'] + df['Close']) / 3
+                    
+                    # 計算累積值
+                    df['tp_vol'] = df['typical_price'] * df['Volume']
+                    df['cum_tp_vol'] = df['tp_vol'].cumsum()
+                    df['cum_vol'] = df['Volume'].cumsum()
+                    
+                    # 計算VWAP
+                    df['vwap'] = df['cum_tp_vol'] / df['cum_vol']
+                    
+                    # 刪除臨時列
+                    df = df.drop(['typical_price', 'tp_vol', 'cum_tp_vol', 'cum_vol'], axis=1)
+                
+                print(f"{symbol} VWAP計算完成")
+            except Exception as e:
+                print(f"計算 {symbol} VWAP時發生錯誤: {e}")
+                # 使用移動平均線作為備用
+                df['vwap'] = df['Close'].rolling(window=20).mean()
+            
+            # 計算價格在VWAP下方的比例
+            try:
+                below_vwap = (df['Close'] < df['vwap']).sum()
+                total_bars = len(df)
+                ratio = below_vwap / total_bars if total_bars > 0 else 0
+                below_vwap_ratio[symbol] = ratio
+                print(f"{symbol} 在VWAP下方的比例: {ratio:.2%}")
+            except Exception as e:
+                print(f"計算 {symbol} 在VWAP下方比例時發生錯誤: {e}")
+                below_vwap_ratio[symbol] = 0
+            
+            dfs[symbol] = df
+            print(f"成功獲取並處理 {symbol} 的數據，共 {len(df)} 條記錄")
+            
+        except Exception as e:
+            print(f"獲取 {symbol} 數據時發生錯誤: {e}")
+    
+    if not dfs:
+        print("無法獲取任何數據")
+        return None, {}
+    
+    # 創建圖表
+    fig, axes = plt.subplots(len(dfs), 1, figsize=(12, 8 * len(dfs)), sharex=True)
+    if len(dfs) == 1:
+        axes = [axes]
+    
+    for i, (symbol, df) in enumerate(dfs.items()):
+        ax = axes[i]
+        
+        try:
+            # 繪製K線
+            for j, (idx, row) in enumerate(df.iterrows()):
+                try:
+                    # 確定蠟燭顏色
+                    color = 'green' if row['Close'] >= row['Open'] else 'red'
+                    
+                    # 繪製實體
+                    ax.plot([j, j], [row['Open'], row['Close']], color=color, linewidth=4)
+                    
+                    # 繪製上下影線
+                    ax.plot([j, j], [row['Low'], row['High']], color=color, linewidth=1)
+                except Exception as e:
+                    print(f"繪製第 {j} 根K線時發生錯誤: {e}")
+            
+            # 繪製VWAP
+            ax.plot(range(len(df)), df['vwap'], color='blue', linewidth=2, label='Daily VWAP')
+            
+            # 設置標題和標籤（使用英文）
+            symbol_name = 'Micro E-mini Nasdaq-100' if 'MNQ' in symbol else 'Micro E-mini S&P 500'
+            ax.set_title(f"{symbol_name} ({symbol}) - 5-min Candles - Below VWAP: {below_vwap_ratio.get(symbol, 0):.2%}", fontsize=14)
+            ax.set_ylabel('Price', fontsize=12)
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            
+            # 設置x軸刻度
+            if len(df) > 0:
+                # 每小時一個刻度
+                step = 12  # 5分鐘K線，一小時有12根
+                ticks = range(0, len(df), step)
+                ax.set_xticks(ticks)
+                
+                # 格式化時間標籤
+                if isinstance(df.index[0], pd.Timestamp):
+                    # 確保有足夠的標籤
+                    valid_indices = [i for i in range(0, len(df), step) if i < len(df)]
+                    if valid_indices:
+                        labels = [df.index[i].strftime('%H:%M') for i in valid_indices]
+                        ax.set_xticklabels(labels, rotation=45)
+        except Exception as e:
+            print(f"繪製 {symbol} 圖表時發生錯誤: {e}")
+    
+    # 設置x軸標籤（使用英文）
+    axes[-1].set_xlabel('Time', fontsize=12)
+    
+    # 調整布局
+    plt.tight_layout()
+    
+    # 保存圖片
+    buf = BytesIO()
+    plt.savefig(buf, format='png', dpi=100)
+    buf.seek(0)
+    plt.close()
+    
+    return buf, below_vwap_ratio
+
 async def send_market_status():
     """發送市場狀態到Discord"""
-    base_path = "/home/ben/pCloudDrive/stock/GEX/GEX_file/tvcode"
+    base_path = find_gex_path()
+    if not base_path:
+        print("錯誤：找不到有效的GEX文件路徑")
+        return
+    
     today = datetime.now()
     today_str = today.strftime("%Y%m%d")
     today_file = os.path.join(base_path, f"tvcode_{today_str}.txt")
@@ -548,6 +779,24 @@ async def send_market_status():
         
         # 發送訊息和表格圖片
         await channel.send(message, file=discord.File(fp=table_image, filename="market_status.png"))
+        
+        # 創建並發送VWAP圖表
+        try:
+            print("正在創建VWAP圖表...")
+            vwap_image, below_vwap_ratio = create_vwap_chart()
+            
+            if vwap_image:
+                vwap_message = "**MNQ和MES的5分鐘K線圖與Daily VWAP分析**\n"
+                for symbol, ratio in below_vwap_ratio.items():
+                    symbol_name = 'Micro E-mini Nasdaq-100' if symbol == 'MNQ=F' else 'Micro E-mini S&P 500'
+                    vwap_message += f"{symbol_name} ({symbol}): 價格在VWAP下方比例 {ratio:.2%}\n"
+                
+                await channel.send(vwap_message, file=discord.File(fp=vwap_image, filename="vwap_chart.png"))
+                print("VWAP圖表已發送")
+            else:
+                print("無法創建VWAP圖表")
+        except Exception as e:
+            print(f"發送VWAP圖表時發生錯誤: {e}")
     else:
         print("無法找到指定的Discord頻道")
 

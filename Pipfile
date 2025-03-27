@@ -17,6 +17,7 @@ plotly = "*"
 yfinance = "*"
 numpy = "*"
 pyyaml = "*"
+matplotlib = "*"
 
 [dev-packages]
 
