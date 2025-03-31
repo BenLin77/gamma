@@ -183,25 +183,57 @@ def create_market_table(market_data):
             all_gamma_display = f"{all_gamma} ({gamma_env_days}d)"
         
         # 檢查是否首次跌破 Gamma Flip
+        print(f"\nDEBUG - {stock} 跌破 GF 條件檢查:")
+        print(f"  current_price = {current_price}")
+        print(f"  prev_day_price = {prev_day_price}")
+        print(f"  gamma_flip = {gamma_flip}")
+        
+        if current_price is not None and prev_day_price is not None and gamma_flip is not None:
+            print(f"  昨收 > GF: {prev_day_price > gamma_flip} ({prev_day_price} > {gamma_flip})")
+            print(f"  現價 < GF: {current_price < gamma_flip} ({current_price} < {gamma_flip})")
+            print(f"  條件全部滿足: {prev_day_price > gamma_flip and current_price < gamma_flip}")
+        else:
+            print(f"  條件不滿足: 有空值 (current_price={current_price}, prev_day_price={prev_day_price}, gamma_flip={gamma_flip})")
+        
         if (current_price and prev_day_price and gamma_flip and
             prev_day_price > gamma_flip and current_price < gamma_flip):
+            print(f"DEBUG - 檢測到特殊情況: {stock} 價格跌破 Gamma Flip")
+            print(f"  昨收: {prev_day_price:.2f}, 現價: {current_price:.2f}, Gamma Flip: {gamma_flip:.2f}")
             special_notes.append({
                 'stock': stock,
                 'type': '跌破GF',
                 'priority': 0,  # 最高優先級
                 'message': f" {stock}: 價格跌破 Gamma Flip\n   昨收: {prev_day_price:.2f} ➡️ 現價: {current_price:.2f}\n   Gamma Flip: {gamma_flip:.2f}"
             })
-        
+        else:
+            print(f"DEBUG - {stock} 未跌破 Gamma Flip")
+            
         # 檢查是否首次突破 Gamma Flip
+        print(f"\nDEBUG - {stock} 突破 GF 條件檢查:")
+        print(f"  current_price = {current_price}")
+        print(f"  prev_day_price = {prev_day_price}")
+        print(f"  gamma_flip = {gamma_flip}")
+        
+        if current_price is not None and prev_day_price is not None and gamma_flip is not None:
+            print(f"  昨收 < GF: {prev_day_price < gamma_flip} ({prev_day_price} < {gamma_flip})")
+            print(f"  現價 > GF: {current_price > gamma_flip} ({current_price} > {gamma_flip})")
+            print(f"  條件全部滿足: {prev_day_price < gamma_flip and current_price > gamma_flip}")
+        else:
+            print(f"  條件不滿足: 有空值 (current_price={current_price}, prev_day_price={prev_day_price}, gamma_flip={gamma_flip})")
+            
         if (current_price and prev_day_price and gamma_flip and
             prev_day_price < gamma_flip and current_price > gamma_flip):
+            print(f"DEBUG - 檢測到特殊情況: {stock} 價格突破 Gamma Flip")
+            print(f"  昨收: {prev_day_price:.2f}, 現價: {current_price:.2f}, Gamma Flip: {gamma_flip:.2f}")
             special_notes.append({
                 'stock': stock,
                 'type': '突破GF',
                 'priority': 0,  # 最高優先級
                 'message': f" {stock}: 價格突破 Gamma Flip\n   昨收: {prev_day_price:.2f} ➡️ 現價: {current_price:.2f}\n   Gamma Flip: {gamma_flip:.2f}"
             })
-
+        else:
+            print(f"DEBUG - {stock} 未突破 Gamma Flip")
+            
         # 添加到表格數據
         row = [
             stock,
