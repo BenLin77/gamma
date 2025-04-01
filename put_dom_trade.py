@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from io import BytesIO
 import json
+import requests
 
 # 載入環境變數
 load_dotenv()
@@ -685,6 +686,9 @@ async def send_market_status():
     except Exception as e:
         print(f"批量下載股價數據時發生錯誤: {e}")
     
+    # 定義需要監控的標的列表
+    monitored_symbols = ['QQQ', 'SPX', 'VIX', 'IWM', 'SMH']
+    
     # 處理每個股票
     with open(today_file, 'r') as f:
         today_lines = f.readlines()
@@ -741,12 +745,31 @@ async def send_market_status():
                 if gamma_history[stock]['ce_env']['status'] == current_gamma_ce_env:
                     gamma_history[stock]['ce_env']['days'] += 1
                 else:
+                    # 檢查是否從 Negative 變為 Positive (剛站上 positive gamma)
+                    if gamma_history[stock]['ce_env']['status'] == 'Negative' and current_gamma_ce_env == 'Positive' and stock in monitored_symbols:
+                        # 發送 Bark 通知
+                        send_bark_notification(f"{stock}剛站上positive gamma第一天", "isArchive=1")
+                        print(f"已發送 Bark 通知: {stock}剛站上positive gamma第一天")
+                    
                     gamma_history[stock]['ce_env'] = {'status': current_gamma_ce_env, 'days': 1}
                 
                 # 更新全部合約環境天數
                 if gamma_history[stock]['env']['status'] == current_gamma_env:
                     gamma_history[stock]['env']['days'] += 1
+                    
+                    # 檢查是否在 negative gamma 且天數需要通知
+                    if current_gamma_env == 'Negative' and stock in monitored_symbols:
+                        days = gamma_history[stock]['env']['days']
+                        if days >= 3:  # 第三天或更多天
+                            send_bark_notification(f"{stock}在negative gamma第{days}天，請務必做好避險", "isArchive=1")
+                            print(f"已發送 Bark 通知: {stock}在negative gamma第{days}天，請務必做好避險")
                 else:
+                    # 檢查是否從 Negative 變為 Positive (剛站上 positive gamma)
+                    if gamma_history[stock]['env']['status'] == 'Negative' and current_gamma_env == 'Positive' and stock in monitored_symbols:
+                        # 發送 Bark 通知
+                        send_bark_notification(f"{stock}剛站上positive gamma第一天", "isArchive=1")
+                        print(f"已發送 Bark 通知: {stock}剛站上positive gamma第一天")
+                    
                     gamma_history[stock]['env'] = {'status': current_gamma_env, 'days': 1}
             
             # 添加到市場數據列表
@@ -831,6 +854,21 @@ async def send_market_status():
             print(f"發送VWAP圖表時發生錯誤: {e}")
     else:
         print("無法找到指定的Discord頻道")
+
+def send_bark_notification(message, params=""):
+    """發送 Bark 通知"""
+    try:
+        bark_url = f"https://api.day.app/sv5b4v7Un9jzUi9Spf2Quh/{message}"
+        if params:
+            bark_url += f"?{params}"
+        
+        response = requests.get(bark_url)
+        if response.status_code == 200:
+            print(f"Bark 通知發送成功: {message}")
+        else:
+            print(f"Bark 通知發送失敗: {response.status_code}, {response.text}")
+    except Exception as e:
+        print(f"發送 Bark 通知時發生錯誤: {e}")
 
 async def main():
     """主程式"""
