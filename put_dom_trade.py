@@ -10,6 +10,7 @@ import numpy as np
 from io import BytesIO
 import json
 import requests
+import pickle
 
 # 載入環境變數
 load_dotenv()
@@ -748,8 +749,10 @@ async def send_market_status():
                     # 檢查是否從 Negative 變為 Positive (剛站上 positive gamma)
                     if gamma_history[stock]['ce_env']['status'] == 'Negative' and current_gamma_ce_env == 'Positive' and stock in monitored_symbols:
                         # 發送 Bark 通知
-                        send_bark_notification(f"{stock}剛站上positive gamma第一天", "isArchive=1")
-                        print(f"已發送 Bark 通知: {stock}剛站上positive gamma第一天")
+                        notification_type = "positive_gamma_ce_first_day"
+                        if not has_sent_notification_today(stock, notification_type):
+                            send_bark_notification(f"{stock}剛站上positive gamma CE第一天", "isArchive=1")
+                            print(f"已發送 Bark 通知: {stock}剛站上positive gamma CE第一天")
                     
                     gamma_history[stock]['ce_env'] = {'status': current_gamma_ce_env, 'days': 1}
                 
@@ -761,14 +764,18 @@ async def send_market_status():
                     if current_gamma_env == 'Negative' and stock in monitored_symbols:
                         days = gamma_history[stock]['env']['days']
                         if days >= 3:  # 第三天或更多天
-                            send_bark_notification(f"{stock}在negative gamma第{days}天，請務必做好避險", "isArchive=1")
-                            print(f"已發送 Bark 通知: {stock}在negative gamma第{days}天，請務必做好避險")
+                            notification_type = f"negative_gamma_day_{days}"
+                            if not has_sent_notification_today(stock, notification_type):
+                                send_bark_notification(f"{stock}在negative gamma第{days}天，請務必做好避險", "isArchive=1")
+                                print(f"已發送 Bark 通知: {stock}在negative gamma第{days}天，請務必做好避險")
                 else:
                     # 檢查是否從 Negative 變為 Positive (剛站上 positive gamma)
                     if gamma_history[stock]['env']['status'] == 'Negative' and current_gamma_env == 'Positive' and stock in monitored_symbols:
-                        # 發送 Bark 通知
-                        send_bark_notification(f"{stock}剛站上positive gamma第一天", "isArchive=1")
-                        print(f"已發送 Bark 通知: {stock}剛站上positive gamma第一天")
+                        notification_type = "positive_gamma_first_day"
+                        if not has_sent_notification_today(stock, notification_type):
+                            # 發送 Bark 通知
+                            send_bark_notification(f"{stock}剛站上positive gamma第一天", "isArchive=1")
+                            print(f"已發送 Bark 通知: {stock}剛站上positive gamma第一天")
                     
                     gamma_history[stock]['env'] = {'status': current_gamma_env, 'days': 1}
             
@@ -858,17 +865,52 @@ async def send_market_status():
 def send_bark_notification(message, params=""):
     """發送 Bark 通知"""
     try:
-        bark_url = f"https://api.day.app/sv5b4v7Un9jzUi9Spf2Quh/{message}"
-        if params:
-            bark_url += f"?{params}"
+        bark_key = os.getenv('BARK_KEY')
+        if not bark_key:
+            print("錯誤：找不到 BARK_KEY 環境變數")
+            return False
         
-        response = requests.get(bark_url)
-        if response.status_code == 200:
-            print(f"Bark 通知發送成功: {message}")
-        else:
-            print(f"Bark 通知發送失敗: {response.status_code}, {response.text}")
+        url = f"https://api.day.app/{bark_key}/{message}?{params}"
+        response = requests.get(url)
+        return response.status_code == 200
     except Exception as e:
         print(f"發送 Bark 通知時發生錯誤: {e}")
+        return False
+
+def has_sent_notification_today(stock, notification_type):
+    """檢查今天是否已經發送過特定類型的通知"""
+    today = datetime.now().strftime("%Y%m%d")
+    base_path = find_gex_path()
+    if not base_path:
+        print("錯誤：找不到有效的GEX文件路徑")
+        return False
+        
+    notification_record_file = os.path.join(base_path, "notification_record.pkl")
+    
+    # 加載通知記錄
+    notification_record = {}
+    if os.path.exists(notification_record_file):
+        try:
+            with open(notification_record_file, 'rb') as f:
+                notification_record = pickle.load(f)
+        except Exception as e:
+            print(f"讀取通知記錄時發生錯誤: {e}")
+    
+    # 檢查今天是否已發送過該通知
+    key = f"{today}_{stock}_{notification_type}"
+    if key in notification_record:
+        print(f"今天已經發送過 {stock} 的 {notification_type} 通知")
+        return True
+    
+    # 記錄此次通知
+    notification_record[key] = True
+    try:
+        with open(notification_record_file, 'wb') as f:
+            pickle.dump(notification_record, f)
+    except Exception as e:
+        print(f"保存通知記錄時發生錯誤: {e}")
+    
+    return False
 
 async def main():
     """主程式"""

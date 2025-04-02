@@ -125,6 +125,11 @@ def calculate_indicator_stats(df, selected_markers):
             else:
                 last_cross_change = 0
             
+            # 計算 Dominate 特殊統計（前一天打到後第二天的表現）
+            dominate_next_day_stats = None
+            if 'Dominate' in marker:
+                dominate_next_day_stats = calculate_dominate_next_day_stats(df, marker)
+            
             stats[marker] = {
                 '指標趨勢': f"{recent_trend} ({trend_change:.2f}%)",
                 '穿越次數': np.sum(crosses),
@@ -134,7 +139,62 @@ def calculate_indicator_stats(df, selected_markers):
                 '最近穿越表現': f"{last_cross_change:+.2f}%" if last_cross_change != 0 else "N/A",
                 '當前距離': f"{(close_prices[-1] - marker_values[-1]):+.2f}" if not np.isnan(marker_values[-1]) else "N/A"
             }
+            
+            # 添加 Dominate 特殊統計
+            if dominate_next_day_stats:
+                stats[marker].update(dominate_next_day_stats)
+                
     return stats
+
+def calculate_dominate_next_day_stats(df, marker):
+    """計算 Dominate 特殊統計：前一天打到後第二天的表現"""
+    result = {}
+    
+    # 獲取收盤價和指標值
+    close_prices = df['Close'].values
+    marker_values = df[marker].values
+    dates = df['Date'].values
+    
+    # 檢查是否為 Call Dominate 或 Put Dominate
+    is_call_dominate = 'Call Dominate' in marker
+    is_put_dominate = 'Put Dominate' in marker
+    
+    if is_call_dominate or is_put_dominate:
+        # 找出價格觸及 Dominate 的天數
+        if is_call_dominate:
+            # 價格打到 Call Dominate（價格 >= Call Dominate）
+            hit_days = np.where(close_prices >= marker_values)[0]
+            hit_text = "Call Dominate後第二天下跌率"
+        else:  # is_put_dominate
+            # 價格打到 Put Dominate（價格 <= Put Dominate）
+            hit_days = np.where(close_prices <= marker_values)[0]
+            hit_text = "Put Dominate後第二天上漲率"
+        
+        total_hits = 0
+        expected_moves = 0
+        
+        for hit_idx in hit_days:
+            # 確保有下一個交易日的數據
+            if hit_idx + 1 < len(close_prices):
+                total_hits += 1
+                
+                if is_call_dominate:
+                    # 檢查第二天是否下跌（價格低於 Call Dominate）
+                    if close_prices[hit_idx + 1] < marker_values[hit_idx]:
+                        expected_moves += 1
+                else:  # is_put_dominate
+                    # 檢查第二天是否上漲（價格高於 Put Dominate）
+                    if close_prices[hit_idx + 1] > marker_values[hit_idx]:
+                        expected_moves += 1
+        
+        # 計算機率
+        if total_hits > 0:
+            probability = (expected_moves / total_hits) * 100
+            result[hit_text] = f"{probability:.2f}% ({expected_moves}/{total_hits})"
+        else:
+            result[hit_text] = "N/A"
+    
+    return result
 
 @st.cache_data(ttl=3600)  # 快取圖表一小時
 def create_candlestick_chart(df, selected_markers=None, title="Stock Chart", show_vix=False):
