@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import discord
 from discord import Colour, File
+import time
 import yfinance as yf
 from dotenv import load_dotenv
 import matplotlib.pyplot as plt
@@ -790,7 +791,8 @@ async def send_market_status():
                 'prev_prev_gamma_flip': prev_prev_gamma_flip,
                 'prev_day_price': prev_day_price,
                 'gamma_ce_env_days': gamma_history[stock]['ce_env']['days'],
-                'gamma_env_days': gamma_history[stock]['env']['days']
+                'gamma_env_days': gamma_history[stock]['env']['days'],
+                'current_gamma_env': current_gamma_env  # 添加當前 gamma 環境狀態
             }
             
             market_data.append(stock_data)
@@ -815,6 +817,9 @@ async def send_market_status():
     if not market_data:
         print("沒有有效的市場數據")
         return
+        
+    # 檢查 VIX 站上 gamma flip 且 SPX 跌破 gamma flip 的情況
+    check_vix_spx_gamma_flip_condition(market_data)
     
     # 創建表格圖片
     table_image, special_notes = create_market_table(market_data)
@@ -862,20 +867,67 @@ async def send_market_status():
     else:
         print("無法找到指定的Discord頻道")
 
-def send_bark_notification(message, params=""):
-    """發送 Bark 通知"""
+def send_bark_notification(message, params="", repeat=1):
+    """發送 Bark 通知
+    
+    Args:
+        message: 通知訊息
+        params: 額外參數
+        repeat: 重複發送次數
+    """
     try:
         bark_key = os.getenv('BARK_KEY')
         if not bark_key:
             print("錯誤：找不到 BARK_KEY 環境變數")
             return False
         
-        url = f"https://api.day.app/{bark_key}/{message}?{params}"
-        response = requests.get(url)
-        return response.status_code == 200
+        success = True
+        for i in range(repeat):
+            url = f"https://api.day.app/{bark_key}/{message}?{params}"
+            response = requests.get(url)
+            success = success and response.status_code == 200
+            if i < repeat - 1 and repeat > 1:
+                time.sleep(3)  # 如果需要重複發送，等待3秒再發送下一次
+        
+        return success
     except Exception as e:
         print(f"發送 Bark 通知時發生錯誤: {e}")
         return False
+
+def check_vix_spx_gamma_flip_condition(market_data):
+    """檢查 VIX 站上 gamma flip 且 SPX 跌破 gamma flip 的情況"""
+    vix_data = None
+    spx_data = None
+    
+    # 找出 VIX 和 SPX 的數據
+    for data in market_data:
+        if data['stock'] == 'VIX':
+            vix_data = data
+        elif data['stock'] == 'SPX':
+            spx_data = data
+    
+    # 如果有 VIX 和 SPX 的數據，檢查條件
+    if vix_data and spx_data:
+        vix_price = vix_data['current_price']
+        vix_gamma_flip = vix_data['gamma_flip']
+        vix_gamma_env = vix_data['current_gamma_env']
+        
+        spx_price = spx_data['current_price']
+        spx_gamma_flip = spx_data['gamma_flip']
+        spx_gamma_env = spx_data['current_gamma_env']
+        
+        # 檢查 VIX 站上 gamma flip 且 SPX 跌破 gamma flip
+        if (vix_gamma_flip and vix_price and vix_price > vix_gamma_flip and 
+            spx_gamma_flip and spx_price and spx_price < spx_gamma_flip):
+            
+            # 確認 VIX 是 Positive 且 SPX 是 Negative
+            if vix_gamma_env == 'Positive' and spx_gamma_env == 'Negative':
+                notification_type = "vix_spx_gamma_flip_alert"
+                if not has_sent_notification_today("MARKET", notification_type):
+                    # 發送重要警告通知，重複三次
+                    message = "⚠️ 重要警告 ⚠️ VIX站上gamma flip且SPX跌破gamma flip，市場可能有較大波動"
+                    send_bark_notification(message, "group=market&level=timeSensitive&sound=alarm&isArchive=1", repeat=3)
+                    print(f"已發送重要警告通知: {message}")
 
 def has_sent_notification_today(stock, notification_type):
     """檢查今天是否已經發送過特定類型的通知"""
