@@ -819,7 +819,7 @@ async def send_market_status():
         return
         
     # 檢查 VIX 站上 gamma flip 且 SPX 跌破 gamma flip 的情況
-    check_vix_spx_gamma_flip_condition(market_data)
+    alert_condition, alert_message = check_vix_spx_gamma_flip_condition(market_data)
     
     # 創建表格圖片
     table_image, special_notes = create_market_table(market_data)
@@ -832,6 +832,21 @@ async def send_market_status():
         # 創建說明訊息
         today_date = datetime.strptime(today_str, "%Y%m%d").strftime("%Y/%m/%d")
         prev_date = datetime.strptime(prev_day_str, "%Y%m%d").strftime("%Y/%m/%d")
+        
+        # 如果有 VIX/SPX 警告，先發送警告訊息
+        if alert_condition:
+            # 創建特別醒目的警告訊息
+            discord_alert = "\n".join([
+                "@everyone",
+                "```diff",
+                "- ⚠️⚠️⚠️ 重要市場警告 ⚠️⚠️⚠️",
+                "- VIX站上gamma flip且SPX跌破gamma flip",
+                "- 市場可能有較大波動，請注意風險管理",
+                "```"
+            ])
+            await channel.send(discord_alert)
+        
+        # 常見報告訊息
         message = f"**市場 Gamma 環境報告** ({today_date})\n"
         message += f"與前一交易日 ({prev_date}) 比較\n"
         message += f"綠色: Gamma Flip 比前一日高 (看漲)\n"
@@ -928,6 +943,12 @@ def check_vix_spx_gamma_flip_condition(market_data):
                     message = "⚠️ 重要警告 ⚠️ VIX站上gamma flip且SPX跌破gamma flip，市場可能有較大波動"
                     send_bark_notification(message, "group=market&level=timeSensitive&sound=alarm&isArchive=1", repeat=3)
                     print(f"已發送重要警告通知: {message}")
+                    
+                    # 返回警告訊息，供 Discord 通知使用
+                    return True, message
+    
+    # 如果沒有符合條件，返回 False 和空訊息
+    return False, ""
 
 def has_sent_notification_today(stock, notification_type):
     """檢查今天是否已經發送過特定類型的通知"""
