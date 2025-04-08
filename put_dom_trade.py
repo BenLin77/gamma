@@ -891,17 +891,25 @@ def send_bark_notification(message, params="", repeat=1):
         repeat: 重複發送次數
     """
     try:
+        # 從環境變數讀取 BARK_KEY
         bark_key = os.getenv('BARK_KEY')
         if not bark_key:
-            print("錯誤：找不到 BARK_KEY 環境變數")
+            print("錯誤：找不到 BARK_KEY 環境變數，請確保已在 .env 文件中設置")
             return False
         
         success = True
         for i in range(repeat):
             url = f"https://api.day.app/{bark_key}/{message}?{params}"
+            print(f"正在發送 Bark 通知: {url}")
             response = requests.get(url)
+            if response.status_code == 200:
+                print(f"Bark 通知發送成功 ({i+1}/{repeat})")
+            else:
+                print(f"Bark 通知發送失敗，HTTP 狀態碼: {response.status_code}")
+                print(f"響應內容: {response.text}")
             success = success and response.status_code == 200
             if i < repeat - 1 and repeat > 1:
+                print(f"等待 3 秒後發送下一次通知 ({i+1}/{repeat})...")
                 time.sleep(3)  # 如果需要重複發送，等待3秒再發送下一次
         
         return success
@@ -941,8 +949,12 @@ def check_vix_spx_gamma_flip_condition(market_data):
                 if not has_sent_notification_today("MARKET", notification_type):
                     # 發送重要警告通知，重複三次
                     message = "⚠️ 重要警告 ⚠️ VIX站上gamma flip且SPX跌破gamma flip，市場可能有較大波動"
-                    send_bark_notification(message, "group=market&level=timeSensitive&sound=alarm&isArchive=1", repeat=3)
+                    # 使用 isArchive=1 參數確保通知被保存
+                    send_bark_notification(message, "level=timeSensitive&sound=alarm&isArchive=1", repeat=3)
                     print(f"已發送重要警告通知: {message}")
+                    
+                    # 記錄已發送通知
+                    record_notification("MARKET", notification_type)
                     
                     # 返回警告訊息，供 Discord 通知使用
                     return True, message
