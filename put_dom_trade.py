@@ -954,7 +954,8 @@ def check_vix_spx_gamma_flip_condition(market_data):
                     print(f"已發送重要警告通知: {message}")
                     
                     # 記錄已發送通知
-                    record_notification("MARKET", notification_type)
+                    # 使用 has_sent_notification_today 函數來記錄通知，它會自動保存記錄
+                    has_sent_notification_today("MARKET", notification_type)
                     
                     # 返回警告訊息，供 Discord 通知使用
                     return True, message
