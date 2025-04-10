@@ -7,9 +7,22 @@ from pathlib import Path
 from ib_insync import IB, Stock, LimitOrder, Future, PriceCondition, Order, MarketOrder, Index, StopOrder
 import argparse
 import json
-from flask import Flask, request, jsonify
-from threading import Thread
 import logging
+import os
+import sys
+import subprocess
+import shutil
+
+# 設置日誌
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("ibkr_order.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger('ibkr_order')
 
 def parse_market_levels(text):
     """解析市場層級資訊
@@ -260,15 +273,12 @@ def place_bracket_order(ib, contract, entry_order, stop_loss_points):
     
     return trade
 
-# 創建 Flask 應用程序來接收 TradingView 的 webhook
-app = Flask(__name__)
-
 # 設置日誌
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    handlers=[logging.FileHandler("ibkr_webhook.log"),
-                              logging.StreamHandler()])
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('ibkr_order')
 
 # 全局 IB 連接對象
 ib_connection = None
@@ -303,137 +313,98 @@ def initialize_ib():
         logger.error(f"連接 IB Gateway 時出錯: {str(e)}")
         return None
 
-# 處理 TradingView 的 webhook 請求
-@app.route('/webhook', methods=['POST'])
-def webhook():
+
+
+def process_order_from_file(file_path):
+    """從文件中讀取訂單數據並處理"""
     try:
-        # 獲取 webhook 數據
-        data = request.json
-        logger.info(f"收到 TradingView webhook: {data}")
-        
-        # 驗證必要字段
-        required_fields = ['symbol', 'action', 'gamma_level']
-        for field in required_fields:
-            if field not in data:
-                logger.error(f"缺少必要字段: {field}")
-                return jsonify({"status": "error", "message": f"缺少必要字段: {field}"}), 400
-        
-        # 獲取 gamma level 配置
-        gamma_level = data['gamma_level']
-        symbol = data['symbol']
-        action = data['action']
-        quantity = data.get('quantity', 1)
-        contract_type = data.get('contract_type', 'MNQ' if symbol == 'QQQ' else 'MES')
-        stop_loss_points = data.get('stop_loss_points', 200 if contract_type == 'MNQ' else 20)
-        take_profit_points = data.get('take_profit_points', 400 if contract_type == 'MNQ' else 40)
-        
-        # 讀取 gamma level 配置
-        try:
-            with open('gamma_levels.yaml', 'r', encoding='utf-8') as f:
-                gamma_config = yaml.safe_load(f)
-                
-            if gamma_level not in gamma_config:
-                logger.error(f"找不到指定的 gamma level: {gamma_level}")
-                return jsonify({"status": "error", "message": f"找不到指定的 gamma level: {gamma_level}"}), 400
-                
-            level_price = gamma_config[gamma_level].get(symbol)
-            if not level_price:
-                logger.error(f"在 gamma level '{gamma_level}' 中找不到 {symbol} 的價格")
-                return jsonify({"status": "error", "message": f"在 gamma level '{gamma_level}' 中找不到 {symbol} 的價格"}), 400
-                
-            # 初始化 IB 連接
-            ib = initialize_ib()
-            if ib is None:
-                return jsonify({"status": "error", "message": "無法連接到 IB Gateway"}), 500
+        logger.info(f"讀取訂單文件: {file_path}")
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
             
+        logger.info(f"訂單數據: {data}")
+        
+        # 從訂單數據中提取信息
+        symbol = data.get('symbol')
+        action = data.get('action')
+        quantity = data.get('quantity', 1)
+        stop_loss_points = data.get('stop_loss_points', 10)
+        contract_type = data.get('contract_type', 'FUT')
+        order_type = data.get('order_type', 'MKT')
+        
+        if not symbol or not action:
+            logger.error("訂單數據缺少必要信息 (symbol 或 action)")
+            return False
+        
+        # 連接到 IB Gateway
+        ib = initialize_ib()
+        if not ib:
+            logger.error("無法連接到 IB Gateway")
+            return False
+            
+        try:
             # 創建合約
             contract = create_contract(symbol, contract_type)
             
-            # 創建條件合約
-            if symbol == 'QQQ':
-                condition_contract = Stock(symbol, 'SMART', 'USD')
-            else:  # SPX
-                condition_contract = Index(symbol, 'CBOE', 'USD')
-            ib.qualifyContracts(condition_contract)
-            
-            # 創建主訂單（條件市價單）
-            main_order = MarketOrder(action, quantity)
-            
-            # 創建價格條件
-            is_greater = action == 'SELL'
-            price_condition = PriceCondition(
-                price=level_price,
-                conId=condition_contract.conId,
-                exchange=condition_contract.exchange,
-                isMore=is_greater
+            # 創建進場訂單
+            entry_order = create_order(
+                action,
+                quantity,
+                order_type
             )
-            main_order.conditions.append(price_condition)
             
-            # 下主訂單
-            main_trade = ib.placeOrder(contract, main_order)
-            logger.info(f"已下主訂單: {main_trade}")
+            logger.info(f"準備下放訂單: {symbol} {action} {quantity} 張")
             
-            # 如果有設定停損
-            if stop_loss_points:
-                # 計算停損價格
-                if action == 'BUY':
-                    # 買入時，停損價格 = 條件價格 - 停損點數
-                    stop_price = level_price - stop_loss_points
-                    stop_action = 'SELL'
-                else:
-                    # 賣出時，停損價格 = 條件價格 + 停損點數
-                    stop_price = level_price + stop_loss_points
-                    stop_action = 'BUY'
-                    
-                # 創建停損單
-                stop_order = StopOrder(stop_action, quantity, stop_price)
-                stop_trade = ib.placeOrder(contract, stop_order)
-                logger.info(f"已下停損單: {stop_trade}, 停損價格: {stop_price}")
+            # 下放訂單
+            trade = place_bracket_order(
+                ib,
+                contract,
+                entry_order,
+                stop_loss_points
+            )
             
-            # 如果有設定目標獲利
-            if take_profit_points:
-                # 計算目標價格
-                if action == 'BUY':
-                    # 買入時，目標價格 = 條件價格 + 獲利點數
-                    profit_price = level_price + take_profit_points
-                    profit_action = 'SELL'
-                else:
-                    # 賣出時，目標價格 = 條件價格 - 獲利點數
-                    profit_price = level_price - take_profit_points
-                    profit_action = 'BUY'
-                    
-                # 創建限價獲利單
-                profit_order = LimitOrder(profit_action, quantity, profit_price)
-                profit_trade = ib.placeOrder(contract, profit_order)
-                logger.info(f"已下獲利單: {profit_trade}, 目標價格: {profit_price}")
+            # 等待訂單更新
+            ib.sleep(1)
             
-            return jsonify({
-                "status": "success", 
-                "message": f"已成功下單 {action} {quantity} {contract_type} 在 {symbol} 達到 {gamma_level} ({level_price}) 時",
-                "order_details": {
-                    "symbol": symbol,
-                    "contract_type": contract_type,
-                    "action": action,
-                    "quantity": quantity,
-                    "gamma_level": gamma_level,
-                    "level_price": level_price,
-                    "stop_loss_points": stop_loss_points,
-                    "take_profit_points": take_profit_points
-                }
-            })
+            # 移動文件到已處理資料夾
+            processed_dir = Path(file_path).parent / 'processed'
+            processed_dir.mkdir(exist_ok=True)
             
-        except Exception as e:
-            logger.error(f"處理訂單時出錯: {str(e)}")
-            return jsonify({"status": "error", "message": f"處理訂單時出錯: {str(e)}"}), 500
+            processed_file = processed_dir / f"processed_{Path(file_path).name}"
+            os.rename(file_path, processed_file)
+            logger.info(f"訂單文件已移動到: {processed_file}")
+            
+            return True
+        finally:
+            ib.disconnect()
             
     except Exception as e:
-        logger.error(f"處理 webhook 請求時出錯: {str(e)}")
-        return jsonify({"status": "error", "message": f"處理請求時出錯: {str(e)}"}), 500
+        logger.error(f"處理訂單文件時出錯: {str(e)}")
+        return False
 
-# 健康檢查端點
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "ok"})
+def initialize_ib():
+    """初始化並連接到 IB Gateway"""
+    try:
+        ib = IB()
+        ib.connect('127.0.0.1', 7497, clientId=1)
+        
+        # 檢查帳戶類型
+        account = ib.managedAccounts()[0]
+        logger.info(f"帳戶號碼: {account}")
+        
+        # Paper Trading 帳戶通常以 'DU' 開頭
+        is_paper = account.startswith('DU')
+        logger.info(f"當前連接到{'模擬帳戶 (Paper Trading)' if is_paper else '實盤帳戶 (Live Trading)'}")
+        
+        # 獲取帳戶餘額
+        account_value = ib.accountSummary(account)
+        net_liq = next(v.value for v in account_value if v.tag == 'NetLiquidation')
+        logger.info(f"帳戶淨值: ${net_liq}")
+        
+        return ib
+    except Exception as e:
+        logger.error(f"連接到 IB Gateway 時出錯: {str(e)}")
+        return None
 
 def main(test_mode=False, start_webhook=False):
     # 讀取配置
@@ -496,23 +467,56 @@ def main(test_mode=False, start_webhook=False):
         if not start_webhook:  # 如果啟動 webhook 服務器，保持連接
             ib.disconnect()
 
-# 啟動 webhook 服務器的函數
-def start_webhook_server(host='0.0.0.0', port=5000):
-    logger.info(f"啟動 webhook 服務器在 {host}:{port}...")
-    app.run(host=host, port=port, debug=False)
 
+
+
+def check_pcloud_orders():
+    """檢查 pCloud 資料夾中的訂單文件"""
+    # 設置路徑
+    ORDERS_DIR = Path('/home/ben/pCloudDrive/stock/GEX/order')  # Make.ai 寫入訂單的資料夾
+    PROCESSED_DIR = Path('/home/ben/pCloudDrive/stock/GEX/order/processed')  # 已處理訂單的資料夾
+    
+    try:
+        # 確保資料夾存在
+        ORDERS_DIR.mkdir(exist_ok=True)
+        PROCESSED_DIR.mkdir(exist_ok=True)
+        
+        # 獲取所有 .json 文件
+        order_files = list(ORDERS_DIR.glob('*.json'))
+        
+        if not order_files:
+            logger.info("沒有新訂單")
+            return False
+            
+        logger.info(f"發現 {len(order_files)} 個新訂單")
+        
+        # 按修改時間排序，先處理舊的訂單
+        order_files.sort(key=lambda x: x.stat().st_mtime)
+        
+        for file_path in order_files:
+            # 檢查文件是否為 JSON
+            if not file_path.name.endswith('.json'):
+                logger.warning(f"跳過非 JSON 文件: {file_path.name}")
+                continue
+                
+            logger.info(f"處理訂單: {file_path.name}")
+            process_order_from_file(str(file_path))
+            
+        return True
+    except Exception as e:
+        logger.error(f"檢查訂單時出錯: {str(e)}")
+        return False
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--test', action='store_true', help='測試模式，不實際下單')
-    parser.add_argument('--webhook', action='store_true', help='啟動 webhook 服務器')
-    parser.add_argument('--port', type=int, default=5000, help='webhook 服務器端口')
+    parser.add_argument('--process_order', type=str, help='處理指定的訂單文件')
+    parser.add_argument('--check_pcloud', action='store_true', help='檢查 pCloud 資料夾中的訂單')
     args = parser.parse_args()
     
-    if args.webhook:
-        # 初始化 IB 連接
-        initialize_ib()
-        # 啟動 webhook 服務器
-        start_webhook_server(port=args.port)
+    if args.process_order:
+        process_order_from_file(args.process_order)
+    elif args.check_pcloud:
+        check_pcloud_orders()
     else:
         main(test_mode=args.test)
