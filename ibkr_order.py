@@ -316,24 +316,81 @@ def initialize_ib():
 
 
 def process_order_from_file(file_path):
-    """從文件中讀取訂單數據並處理"""
+    """從文件中讀取訂單數據並根據 order.yaml 和 gamma level 下單"""
     try:
         logger.info(f"讀取訂單文件: {file_path}")
         with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+            signal_data = json.load(f)
             
-        logger.info(f"訂單數據: {data}")
+        logger.info(f"收到信號數據: {signal_data}")
         
-        # 從訂單數據中提取信息
-        symbol = data.get('symbol')
-        action = data.get('action')
-        quantity = data.get('quantity', 1)
-        stop_loss_points = data.get('stop_loss_points', 10)
-        contract_type = data.get('contract_type', 'FUT')
-        order_type = data.get('order_type', 'MKT')
+        # 從信號數據中提取信息
+        # 支援多種可能的格式
+        signal_symbol = signal_data.get('symbol')  # 信號的標的，如 QQQ
+        signal_action = signal_data.get('action')  # 信號的動作，如 BUY
         
-        if not symbol or not action:
-            logger.error("訂單數據缺少必要信息 (symbol 或 action)")
+        # 如果沒有標準格式，嘗試解析文本格式
+        if not signal_symbol and isinstance(signal_data.get('message'), str):
+            message = signal_data.get('message', '')
+            # 嘗試解析格式如 "buy QQQ 1000"
+            parts = message.strip().split()
+            if len(parts) >= 2:
+                action_text = parts[0].upper()
+                if action_text in ['BUY', 'SELL', '買入', '賣出']:
+                    signal_action = 'BUY' if action_text in ['BUY', '買入'] else 'SELL'
+                    signal_symbol = parts[1].upper()
+        
+        if not signal_symbol:
+            logger.error("信號數據缺少必要信息 (symbol)")
+            return False
+        
+        # 如果沒有指定動作，預設為買入
+        if not signal_action:
+            signal_action = 'BUY'
+            logger.info(f"未指定動作，預設為: {signal_action}")
+        
+        # 讀取 order.yaml 配置
+        try:
+            with open('order.yaml', 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+        except Exception as e:
+            logger.error(f"讀取 order.yaml 時出錯: {str(e)}")
+            return False
+        
+        # 獲取最新的 gamma level 數據
+        tvcode_content = get_latest_tvcode_file()
+        if not tvcode_content:
+            logger.error("無法獲取 gamma level 數據")
+            return False
+            
+        # 解析 gamma level 數據
+        market_levels = parse_market_levels(tvcode_content)
+        logger.info(f"當前市場層級: {market_levels}")
+        
+        # 根據信號尋找匹配的訂單配置
+        matched_orders = []
+        for order_config in config.get('orders', []):
+            condition = order_config.get('condition', {})
+            
+            # 檢查是否匹配信號的標的
+            if condition.get('symbol') == signal_symbol:
+                # 檢查動作方向是否匹配
+                direction = condition.get('direction', '')
+                if (direction == 'LONG' and signal_action == 'BUY') or \
+                   (direction == 'SHORT' and signal_action == 'SELL') or \
+                   not direction:  # 如果沒有指定方向，則視為匹配
+                    matched_orders.append(order_config)
+        
+        if not matched_orders:
+            logger.warning(f"沒有找到匹配的訂單配置: {signal_symbol} {signal_action}")
+            
+            # 移動文件到已處理資料夾
+            processed_dir = Path(file_path).parent / 'processed'
+            processed_dir.mkdir(exist_ok=True)
+            processed_file = processed_dir / f"no_match_{Path(file_path).name}"
+            os.rename(file_path, processed_file)
+            logger.info(f"無匹配訂單，文件已移動到: {processed_file}")
+            
             return False
         
         # 連接到 IB Gateway
@@ -341,35 +398,65 @@ def process_order_from_file(file_path):
         if not ib:
             logger.error("無法連接到 IB Gateway")
             return False
-            
+        
         try:
-            # 創建合約
-            contract = create_contract(symbol, contract_type)
-            
-            # 創建進場訂單
-            entry_order = create_order(
-                action,
-                quantity,
-                order_type
-            )
-            
-            logger.info(f"準備下放訂單: {symbol} {action} {quantity} 張")
-            
-            # 下放訂單
-            trade = place_bracket_order(
-                ib,
-                contract,
-                entry_order,
-                stop_loss_points
-            )
-            
-            # 等待訂單更新
-            ib.sleep(1)
+            # 處理每個匹配的訂單
+            for order_config in matched_orders:
+                try:
+                    # 獲取訂單配置
+                    condition = order_config.get('condition', {})
+                    trade_info = order_config.get('trade', {})
+                    
+                    # 獲取對應的價格層級
+                    price_type = condition.get('type')  # 如 PUT_DOM, CALL_DOM 等
+                    price_types = config.get('price_types', {})
+                    level_key = price_types.get(price_type)
+                    
+                    if not level_key or level_key not in market_levels.get(signal_symbol, {}):
+                        logger.warning(f"無法找到價格層級: {price_type} -> {level_key}")
+                        continue
+                    
+                    # 獲取對應的價格
+                    condition_price = market_levels[signal_symbol][level_key]
+                    
+                    # 創建交易合約
+                    trade_symbol = trade_info.get('symbol')
+                    if trade_symbol in ['MNQ', 'MES']:
+                        contract = Future(trade_symbol, exchange='CME')
+                        ib.qualifyContracts(contract)
+                    else:
+                        logger.error(f"不支援的交易合約: {trade_symbol}")
+                        continue
+                    
+                    # 創建交易訂單
+                    action = trade_info.get('action')  # BUY 或 SELL
+                    quantity = trade_info.get('quantity', 1)
+                    stop_loss = trade_info.get('stop_loss', 10)
+                    take_profit = trade_info.get('take_profit')
+                    
+                    logger.info(f"準備下單: {trade_symbol} {action} {quantity} 張, 價格層級: {level_key}={condition_price}, 停損: {stop_loss}")
+                    
+                    # 下放條件限價單
+                    trade = place_limit_order(ib, {
+                        'symbol': trade_symbol,
+                        'condition_symbol': signal_symbol,
+                        'condition_price': condition_price,
+                        'action': action,
+                        'quantity': quantity,
+                        'reason': f'當{signal_symbol}到達{level_key}位置 {condition_price} 時{"\u8cb7\u5165" if action == "BUY" else "\u8ce3\u51fa"}{trade_symbol}',
+                        'stop_loss': stop_loss,
+                        'take_profit': take_profit,
+                        'is_main_order': True
+                    })
+                    
+                    logger.info(f"已下單: {trade}")
+                    
+                except Exception as e:
+                    logger.error(f"處理訂單配置時出錯: {str(e)}")
             
             # 移動文件到已處理資料夾
             processed_dir = Path(file_path).parent / 'processed'
             processed_dir.mkdir(exist_ok=True)
-            
             processed_file = processed_dir / f"processed_{Path(file_path).name}"
             os.rename(file_path, processed_file)
             logger.info(f"訂單文件已移動到: {processed_file}")
