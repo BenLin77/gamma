@@ -946,25 +946,38 @@ def check_vix_spx_gamma_flip_condition(market_data):
             # 確認 VIX 是 Positive 且 SPX 是 Negative
             if vix_gamma_env == 'Positive' and spx_gamma_env == 'Negative':
                 notification_type = "vix_spx_gamma_flip_alert"
-                if not has_sent_notification_today("MARKET", notification_type):
-                    # 發送重要警告通知，重複三次
-                    message = "⚠️ 重要警告 ⚠️ VIX站上gamma flip且SPX跌破gamma flip，市場可能有較大波動"
-                    # 使用 isArchive=1 參數確保通知被保存
-                    send_bark_notification(message, "level=timeSensitive&sound=alarm&isArchive=1", repeat=3)
-                    print(f"已發送重要警告通知: {message}")
-                    
-                    # 記錄已發送通知
-                    # 使用 has_sent_notification_today 函數來記錄通知，它會自動保存記錄
-                    has_sent_notification_today("MARKET", notification_type)
-                    
-                    # 返回警告訊息，供 Discord 通知使用
-                    return True, message
+                message = "⚠️ 重要警告 ⚠️ VIX站上gamma flip且SPX跌破gamma flip，市場可能有較大波動"
+                
+                # 檢查是否是今天第一次發送此類通知
+                is_first_notification = not has_sent_notification_today("MARKET", notification_type, check_only=True)
+                
+                # 如果是第一次，發送三次 Bark 通知；否則發送一次
+                repeat_count = 3 if is_first_notification else 1
+                
+                # 使用 isArchive=1 參數確保通知被保存
+                send_bark_notification(message, "level=timeSensitive&sound=alarm&isArchive=1", repeat=repeat_count)
+                print(f"已發送重要警告通知: {message}，重複次數: {repeat_count}")
+                
+                # 記錄已發送通知
+                has_sent_notification_today("MARKET", notification_type)
+                
+                # 返回警告訊息，供 Discord 通知使用
+                return True, message
     
     # 如果沒有符合條件，返回 False 和空訊息
     return False, ""
 
-def has_sent_notification_today(stock, notification_type):
-    """檢查今天是否已經發送過特定類型的通知"""
+def has_sent_notification_today(stock, notification_type, check_only=False):
+    """檢查今天是否已經發送過特定類型的通知
+    
+    Args:
+        stock: 股票代碼或市場標識
+        notification_type: 通知類型
+        check_only: 如果為True，只檢查是否已發送過通知，不記錄新通知
+    
+    Returns:
+        bool: 如果今天已經發送過該類型的通知，返回True；否則返回False
+    """
     today = datetime.now().strftime("%Y%m%d")
     base_path = find_gex_path()
     if not base_path:
@@ -987,6 +1000,10 @@ def has_sent_notification_today(stock, notification_type):
     if key in notification_record:
         print(f"今天已經發送過 {stock} 的 {notification_type} 通知")
         return True
+    
+    # 如果只是檢查，不記錄新通知，直接返回
+    if check_only:
+        return False
     
     # 記錄此次通知
     notification_record[key] = True
