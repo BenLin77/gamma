@@ -12,6 +12,10 @@ import os
 import sys
 import subprocess
 import shutil
+import asyncio
+import discord
+from discord.ext import commands
+from dotenv import load_dotenv
 
 # 設置日誌
 logging.basicConfig(
@@ -291,7 +295,7 @@ def initialize_ib():
     
     ib = IB()
     try:
-        ib.connect('127.0.0.1', 7497, clientId=1)
+        ib.connect('127.0.0.1', 4002, clientId=1)
         logger.info("已連接到 IB Gateway")
         
         # 檢查帳戶類型
@@ -473,7 +477,7 @@ def initialize_ib():
     """初始化並連接到 IB Gateway"""
     try:
         ib = IB()
-        ib.connect('127.0.0.1', 7497, clientId=1)
+        ib.connect('127.0.0.1', 4002, clientId=1)
         
         # 檢查帳戶類型
         account = ib.managedAccounts()[0]
@@ -505,7 +509,7 @@ def main(test_mode=False, start_webhook=False):
     # 連接到 IB Gateway
     ib = IB()
     try:
-        ib.connect('127.0.0.1', 7497, clientId=1)
+        ib.connect('127.0.0.1', 4002, clientId=1)
         
         # 檢查帳戶類型
         account = ib.managedAccounts()[0]
@@ -557,53 +561,197 @@ def main(test_mode=False, start_webhook=False):
 
 
 
-def check_pcloud_orders():
-    """檢查 pCloud 資料夾中的訂單文件"""
-    # 設置路徑
-    ORDERS_DIR = Path('/home/ben/pCloudDrive/stock/GEX/order')  # Make.ai 寫入訂單的資料夾
-    PROCESSED_DIR = Path('/home/ben/pCloudDrive/stock/GEX/order/processed')  # 已處理訂單的資料夾
+# Discord Bot 設定
+def setup_discord_bot():
+    """設定 Discord Bot"""
+    # 載入環境變數
+    load_dotenv()
     
-    try:
-        # 確保資料夾存在
-        ORDERS_DIR.mkdir(exist_ok=True)
-        PROCESSED_DIR.mkdir(exist_ok=True)
+    # 設定機器人前綴和權限
+    intents = discord.Intents.default()
+    intents.message_content = True
+    intents.guilds = True
+    
+    bot = commands.Bot(command_prefix='!', intents=intents)
+    
+    # 監聽頻道 ID
+    TRADING_SIGNAL_CHANNEL_ID = 1359726707841437807
+    
+    @bot.event
+    async def on_ready():
+        """當 Bot 準備好時"""
+        logger.info(f'已登入為 {bot.user}')
+        logger.info(f'監聽頻道 ID: {TRADING_SIGNAL_CHANNEL_ID}')
         
-        # 獲取所有 .json 文件
-        order_files = list(ORDERS_DIR.glob('*.json'))
-        
-        if not order_files:
-            logger.info("沒有新訂單")
-            return False
+        # 檢查頻道是否存在
+        channel = bot.get_channel(TRADING_SIGNAL_CHANNEL_ID)
+        if channel:
+            logger.info(f'成功連接到頻道: {channel.name}')
+        else:
+            logger.error(f'找不到頻道 ID: {TRADING_SIGNAL_CHANNEL_ID}')
+    
+    @bot.event
+    async def on_message(message):
+        """當收到訊息時"""
+        # 忽略自己的訊息
+        if message.author == bot.user:
+            return
             
-        logger.info(f"發現 {len(order_files)} 個新訂單")
+        # 只處理特定頻道的訊息
+        if message.channel.id == TRADING_SIGNAL_CHANNEL_ID:
+            logger.info(f"收到頻道訊息: {message.content}")
+            
+            # 不從訊息中提取股票代號，而是檢查 order.yaml 中的所有股票代號是否在訊息中出現
+            logger.info(f"檢查訊息是否包含 order.yaml 中的股票代號")
+            
+            # 載入訂單配置
+            config = load_order_config()
+            
+            # 收集所有已配置的股票代號
+            configured_symbols = set()
+            for order_config in config['orders']:
+                configured_symbols.add(order_config['trade']['symbol'])
+            
+            logger.info(f"order.yaml 中的股票代號: {configured_symbols}")
+            
+            # 檢查訊息中是否包含任何配置的股票代號
+            found_symbols = []
+            for symbol in configured_symbols:
+                if symbol in message.content:
+                    found_symbols.append(symbol)
+            
+            if not found_symbols:
+                logger.warning(f"訊息中沒有找到任何配置的股票代號: {message.content}")
+                await message.channel.send("❌ 訊息中沒有找到任何已配置的股票代號")
+                return
+            
+            # 如果找到多個股票代號，都處理
+            processed_results = []
+            for symbol in found_symbols:
+                logger.info(f"發現股票代號: {symbol}")
+                try:
+                    process_order_by_symbol(symbol)
+                    processed_results.append(f"✅ {symbol} 訂單處理成功")
+                except Exception as e:
+                    error_msg = str(e)[:200]  # 限制錯誤訊息長度
+                    processed_results.append(f"❌ {symbol} 訂單失敗: {error_msg}")
+                    logger.error(f"處理 {symbol} 的訂單失敗: {str(e)}")
+            
+            # 回覆處理結果
+            result_message = "\n".join(processed_results)
+            await message.channel.send(result_message)
         
-        # 按修改時間排序，先處理舊的訂單
-        order_files.sort(key=lambda x: x.stat().st_mtime)
+        await bot.process_commands(message)
+    
+    # 添加一個測試命令
+    @bot.command(name='test')
+    async def test_command(ctx, symbol=None):
+        """測試處理訂單的命令"""
+        if not symbol:
+            await ctx.send("請提供股票代號，例如: !test QQQ")
+            return
+            
+        await ctx.send(f"測試處理 {symbol} 的訂單...")
+        try:
+            process_order_by_symbol(symbol)
+            await ctx.send(f"✅ 測試成功")
+        except Exception as e:
+            await ctx.send(f"❌ 測試失敗: {str(e)[:1000]}")
+    
+    return bot
+
+def start_discord_bot():
+    """啟動 Discord Bot"""
+    bot = setup_discord_bot()
+    
+    # 使用環境變數中的 Token
+    token = os.getenv('DISCORD_BOT_TOKEN')
+    if not token:
+        logger.error("找不到 DISCORD_BOT_TOKEN 環境變數")
+        return
         
-        for file_path in order_files:
-            # 檢查文件是否為 JSON
-            if not file_path.name.endswith('.json'):
-                logger.warning(f"跳過非 JSON 文件: {file_path.name}")
+    logger.info("啟動 Discord Bot...")
+    bot.run(token)
+
+def process_order_by_symbol(symbol):
+    """根據股票代號處理訂單"""
+    logger.info(f"處理 {symbol} 的訂單")
+    
+    # 初始化 IB 連接
+    ib = initialize_ib()
+    if not ib:
+        raise Exception("無法連接到 IB Gateway")
+    
+    # 載入訂單配置
+    config = load_order_config()
+    
+    # 獲取最新的市場層級
+    tvcode_content = get_latest_tvcode_file()
+    if not tvcode_content:
+        raise Exception("無法獲取最新的市場層級")
+    
+    # 解析市場層級
+    levels = parse_market_levels(tvcode_content)
+    
+    # 生成訂單
+    orders = []
+    for order_config in config['orders']:
+        # 只處理符合指定股票代號的訂單
+        if order_config['trade']['symbol'] == symbol:
+            condition_symbol = order_config['condition']['symbol']
+            price_type = config['price_types'][order_config['condition']['type']]
+            
+            # 檢查是否有對應的價格水平
+            if price_type not in levels[condition_symbol]:
+                logger.warning(f"找不到 {condition_symbol} 的 {price_type} 價格水平")
                 continue
                 
-            logger.info(f"處理訂單: {file_path.name}")
-            process_order_from_file(str(file_path))
+            condition_price = levels[condition_symbol][price_type]
+            trade_info = order_config['trade']
             
-        return True
-    except Exception as e:
-        logger.error(f"檢查訂單時出錯: {str(e)}")
-        return False
+            # 生成主訂單
+            orders.append({
+                'symbol': trade_info['symbol'],
+                'condition_symbol': condition_symbol,
+                'condition_price': condition_price,
+                'action': trade_info['action'],
+                'quantity': trade_info['quantity'],
+                'reason': f'當{condition_symbol}到達{price_type}位置 {condition_price} 時{"買入" if trade_info["action"] == "BUY" else "賣出"}{trade_info["symbol"]}',
+                'stop_loss': trade_info.get('stop_loss'),
+                'take_profit': trade_info.get('take_profit'),
+                'is_main_order': True
+            })
+    
+    if not orders:
+        raise Exception(f"在配置中找不到 {symbol} 的訂單設定")
+    
+    # 下單
+    for order_info in orders:
+        logger.info(f"下單原因: {order_info['reason']}")
+        place_limit_order(ib, order_info)
+    
+    # 關閉連接
+    ib.disconnect()
+    
+    return True
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--test', action='store_true', help='測試模式，不實際下單')
     parser.add_argument('--process_order', type=str, help='處理指定的訂單文件')
-    parser.add_argument('--check_pcloud', action='store_true', help='檢查 pCloud 資料夾中的訂單')
+    parser.add_argument('--symbol', type=str, help='處理指定股票代號的訂單')
+    parser.add_argument('--discord', action='store_true', help='啟動 Discord Bot 監聽訂單')
     args = parser.parse_args()
     
     if args.process_order:
         process_order_from_file(args.process_order)
-    elif args.check_pcloud:
-        check_pcloud_orders()
+    elif args.symbol:
+        try:
+            process_order_by_symbol(args.symbol)
+        except Exception as e:
+            logger.error(f"處理 {args.symbol} 的訂單失敗: {str(e)}")
+            sys.exit(1)
+    elif args.discord:
+        start_discord_bot()
     else:
         main(test_mode=args.test)
