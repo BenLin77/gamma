@@ -2,6 +2,9 @@ import re
 import argparse
 from datetime import datetime
 import os
+import sys
+import logging
+import hashlib
 
 def convert_to_short(input_text):
     # 定義映射關係
@@ -139,6 +142,92 @@ def get_today_filename():
     """獲取今天的文件名格式"""
     return f"tvcode_{datetime.now().strftime('%Y%m%d')}.txt"
 
+def validate_conversion(original_text, converted_text, is_reverse=False):
+    """驗證轉換是否成功
+    
+    檢查轉換前後的數據是否保持一致性，確保沒有數據丟失
+    
+    Args:
+        original_text: 原始文本
+        converted_text: 轉換後的文本
+        is_reverse: 是否為反向轉換
+        
+    Returns:
+        (bool, str): 驗證結果和錯誤信息
+    """
+    # 移除空白行和空格進行比較
+    original_clean = '\n'.join([line.strip() for line in original_text.strip().split('\n') if line.strip()])
+    converted_clean = '\n'.join([line.strip() for line in converted_text.strip().split('\n') if line.strip()])
+    
+    # 檢查股票代碼是否一致
+    original_symbols = set()
+    converted_symbols = set()
+    
+    # 根據格式提取股票代碼
+    if is_reverse:
+        # 從短格式提取股票代碼
+        for line in original_clean.split('\n'):
+            if ':' in line:
+                symbol = line.split(':', 1)[0].strip()
+                original_symbols.add(symbol)
+        
+        # 從長格式提取股票代碼
+        for block in converted_clean.split('\n\n'):
+            if ':' in block:
+                symbol = block.split(':', 1)[0].strip()
+                converted_symbols.add(symbol)
+    else:
+        # 從長格式提取股票代碼
+        for block in original_clean.split('\n\n'):
+            if ':' in block:
+                symbol = block.split(':', 1)[0].strip()
+                original_symbols.add(symbol)
+        
+        # 從短格式提取股票代碼
+        for line in converted_clean.split('\n'):
+            if ':' in line:
+                symbol = line.split(':', 1)[0].strip()
+                converted_symbols.add(symbol)
+    
+    # 檢查股票代碼是否一致
+    if original_symbols != converted_symbols:
+        missing = original_symbols - converted_symbols
+        extra = converted_symbols - original_symbols
+        error_msg = []
+        
+        if missing:
+            error_msg.append(f"缺少股票代碼: {', '.join(missing)}")
+        if extra:
+            error_msg.append(f"多出股票代碼: {', '.join(extra)}")
+            
+        return False, '\n'.join(error_msg)
+    
+    # 計算內容雜湊值，用於檢查數據完整性
+    original_hash = hashlib.md5(original_clean.encode()).hexdigest()
+    
+    # 如果是正向轉換，再轉換回來檢查一致性
+    if not is_reverse:
+        back_converted = convert_to_long(converted_clean)
+        back_converted_clean = '\n'.join([line.strip() for line in back_converted.strip().split('\n') if line.strip()])
+        back_hash = hashlib.md5(back_converted_clean.encode()).hexdigest()
+        
+        # 檢查轉換回來的內容是否與原始內容一致
+        if original_hash != back_hash:
+            return False, "轉換後再轉換回來的內容與原始內容不一致，可能有數據丟失"
+    else:
+        # 如果是反向轉換，再轉換回來檢查一致性
+        back_converted = convert_to_short(converted_clean)
+        back_converted_clean = '\n'.join([line.strip() for line in back_converted.strip().split('\n') if line.strip()])
+        
+        # 與原始短格式比較
+        original_short_hash = hashlib.md5(original_clean.encode()).hexdigest()
+        back_short_hash = hashlib.md5(back_converted_clean.encode()).hexdigest()
+        
+        if original_short_hash != back_short_hash:
+            return False, "反向轉換後再轉換回來的內容與原始短格式不一致，可能有數據丟失"
+    
+    return True, ""
+
 def find_gex_path():
     """查找正確的GEX文件路徑"""
     possible_paths = [
@@ -154,22 +243,57 @@ def find_gex_path():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='轉換 Gamma Levels 數據格式')
     parser.add_argument('-r', '--reverse', action='store_true', help='將簡化格式轉換回原始格式')
-    parser.add_argument('-p', '--path', help='指定GEX文件路徑')
+    parser.add_argument('--filepath', help='指定完整的文件路徑，優先於自動查找')
     parser.add_argument('-d', '--debug', action='store_true', help='顯示調試信息')
-    parser.add_argument('-f', '--file', help='指定要處理的文件名')
     parser.add_argument('--overwrite', action='store_true', help='直接覆蓋原始文件')
+    parser.add_argument('--force', action='store_true', help='強制轉換，即使驗證失敗')
+    parser.add_argument('--log', help='指定日誌文件路徑')
     args = parser.parse_args()
     
+    # 設置日誌
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    log_format = '%(asctime)s - %(levelname)s - %(message)s'
+    if args.log:
+        logging.basicConfig(filename=args.log, level=log_level, format=log_format)
+    else:
+        logging.basicConfig(level=log_level, format=log_format)
+    
+    # 顯示棄用警告
+    if hasattr(args, 'path') and args.path or hasattr(args, 'file') and args.file:
+        logging.warning("--path 和 --file 參數已棄用，請使用 --filepath 指定完整文件路徑")
+    
     # 確定文件路徑
-    base_path = args.path if args.path else find_gex_path()
-    if not base_path:
-        print("錯誤：找不到有效的GEX文件路徑")
+    input_file = None
+    base_path = None
+    filename = None
+    
+    if args.filepath:
+        # 優先使用完整文件路徑
+        input_file = args.filepath
+        # 從完整路徑中提取 base_path 和 filename
+        base_path = os.path.dirname(input_file)
+        filename = os.path.basename(input_file)
+        logging.info(f"使用指定的完整文件路徑: {input_file}")
+        logging.info(f"提取的路徑: {base_path}, 文件名: {filename}")
+    else:
+        # 向下兼容舊參數
+        base_path = args.path if args.path else find_gex_path()
+        if not base_path:
+            logging.error("錯誤：找不到有效的GEX文件路徑")
+            print("錯誤：找不到有效的GEX文件路徑")
+            exit(1)
+        
+        # 獲取文件名
+        filename = args.file if args.file else get_today_filename()
+        input_file = os.path.join(base_path, filename)
+        logging.info(f"使用自動查找的文件路徑: {input_file}")
+    
+    # 確保 base_path 和 filename 已經設置
+    if base_path is None or filename is None:
+        logging.error("錯誤：base_path 或 filename 未設置")
+        print("錯誤：base_path 或 filename 未設置")
         exit(1)
-    
-    # 獲取文件名
-    filename = args.file if args.file else get_today_filename()
-    input_file = os.path.join(base_path, filename)
-    
+        
     if args.overwrite:
         # 如果使用覆蓋模式，輸出文件就是輸入文件
         output_file = input_file
@@ -177,7 +301,6 @@ if __name__ == "__main__":
         # 修改命名方式：轉換後的檔案使用原始檔名，原始檔案加上 orig 字樣
         if args.reverse:
             # 反向轉換時，輸入檔案是原始檔案，輸出檔案是原始格式加上 orig 字樣
-            input_file = os.path.join(base_path, filename)
             output_file = os.path.join(base_path, f"orig_{filename}")
         else:
             # 正向轉換時，輸入檔案是原始檔案，輸出檔案直接使用原始檔名
@@ -188,41 +311,73 @@ if __name__ == "__main__":
                     import shutil
                     shutil.copy2(input_file, orig_backup)
                     print(f"已備份原始檔案至 {orig_backup}")
+                    logging.info(f"已備份原始檔案至 {orig_backup}")
                 except Exception as e:
-                    print(f"警告：備份原始檔案時出錯: {str(e)}")
+                    error_msg = f"警告：備份原始檔案時出錯: {str(e)}"
+                    print(error_msg)
+                    logging.warning(error_msg)
             output_file = input_file
     
     # 檢查輸入文件是否存在
     if not os.path.exists(input_file):
-        print(f"錯誤：找不到輸入文件 {input_file}")
+        error_msg = f"錯誤：找不到輸入文件 {input_file}"
+        logging.error(error_msg)
+        print(error_msg)
         exit(1)
     
     try:
+            
         # 讀取輸入文件
         with open(input_file, 'r', encoding='utf-8') as f:
             input_data = f.read()
             if args.debug:
+                logging.debug(f"讀取的輸入數據：\n{input_data}\n")
                 print(f"讀取的輸入數據：\n{input_data}\n")
         
         # 根據參數選擇轉換方向
         if args.reverse:
             output = convert_to_long(input_data)
+            logging.info("執行反向轉換：從簡化格式轉換為原始格式")
         else:
             output = convert_to_short(input_data)
+            logging.info("執行正向轉換：從原始格式轉換為簡化格式")
         
         if args.debug:
+            logging.debug(f"轉換後的數據：\n{output}\n")
             print(f"轉換後的數據：\n{output}\n")
+        
+        # 驗證轉換結果
+        is_valid, error_msg = validate_conversion(input_data, output, args.reverse)
+        
+        if not is_valid:
+            logging.warning(f"轉換驗證失敗: {error_msg}")
+            print(f"警告：轉換驗證失敗: {error_msg}")
+            
+            if not args.force:
+                print("轉換未完成。如果仍要繼續，請使用 --force 參數強制轉換。")
+                logging.error("轉換中止：驗證失敗且未使用 --force 參數")
+                exit(1)
+            else:
+                print("警告：強制繼續轉換，即使驗證失敗")
+                logging.warning("強制繼續轉換，即使驗證失敗")
+        else:
+            logging.info("轉換驗證成功：數據保持一致性")
+            print("轉換驗證成功：數據保持一致性")
         
         # 保存到輸出文件
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(output)
         
+        logging.info(f"轉換完成！文件已更新：{output_file}")
         print(f"轉換完成！")
         print(f"文件已更新：{output_file}")
         
     except Exception as e:
+        logging.error(f"錯誤：處理文件時發生錯誤 - {str(e)}")
         print(f"錯誤：處理文件時發生錯誤 - {str(e)}")
         if args.debug:
             import traceback
-            traceback.print_exc()
+            traceback_str = traceback.format_exc()
+            logging.debug(traceback_str)
+            print(traceback_str)
         exit(1)
