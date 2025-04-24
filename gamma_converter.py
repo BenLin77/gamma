@@ -276,15 +276,15 @@ if __name__ == "__main__":
         logging.info(f"使用指定的完整文件路徑: {input_file}")
         logging.info(f"提取的路徑: {base_path}, 文件名: {filename}")
     else:
-        # 向下兼容舊參數
-        base_path = args.path if args.path else find_gex_path()
+        # 使用自動查找的路徑
+        base_path = find_gex_path()
         if not base_path:
             logging.error("錯誤：找不到有效的GEX文件路徑")
             print("錯誤：找不到有效的GEX文件路徑")
             exit(1)
         
         # 獲取文件名
-        filename = args.file if args.file else get_today_filename()
+        filename = get_today_filename()
         input_file = os.path.join(base_path, filename)
         logging.info(f"使用自動查找的文件路徑: {input_file}")
     
