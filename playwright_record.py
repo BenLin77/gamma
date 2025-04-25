@@ -54,6 +54,26 @@ def process_ticker(page, ticker, download_dir):
 
         # 使用等待函數
         wait_for_chart(page)
+        
+        # 點擊下載按鈕並保存HTML內容
+        with page.expect_download() as download_html_info:
+            page.get_by_role("button", name="下載").click()
+        download_html = download_html_info.value
+        
+        # 創建HTML保存目錄
+        html_dir = os.path.join(download_dir, ticker, "html")
+        os.makedirs(html_dir, exist_ok=True)
+        today_date = datetime.today().strftime('%Y%m%d')
+        html_filename = f"Gamma_{ticker}_{today_date}.html"
+        html_filepath = os.path.join(html_dir, html_filename)
+        
+        # 複製HTML文件到pCloud對應資料夾
+        shutil.move(download_html.path(), html_filepath)
+        
+        # 另外保存當前頁面的HTML源碼
+        page_html = page.content()
+        with open(os.path.join(html_dir, f"page_source_{ticker}_{today_date}.html"), "w", encoding="utf-8") as html_file:
+            html_file.write(page_html)
 
         # 下載 Gamma 圖片
         page.mouse.move(200, 200)
