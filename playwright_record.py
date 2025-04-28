@@ -56,9 +56,7 @@ def process_ticker(page, ticker, download_dir):
         wait_for_chart(page)
         
         # 點擊下載按鈕並保存HTML內容
-        with page.expect_download() as download_html_info:
-            page.get_by_role("button", name="下載").click()
-        download_html = download_html_info.value
+        page.get_by_role("button", name="下載").click()
         
         # 創建HTML保存目錄
         html_dir = os.path.join(download_dir, ticker, "html")
