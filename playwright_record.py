@@ -66,13 +66,6 @@ def process_ticker(page, ticker, download_dir):
         html_filename = f"Gamma_{ticker}_{today_date}.html"
         html_filepath = os.path.join(html_dir, html_filename)
         
-        # 複製HTML文件到pCloud對應資料夾
-        shutil.move(download_html.path(), html_filepath)
-        
-        # 另外保存當前頁面的HTML源碼
-        page_html = page.content()
-        with open(os.path.join(html_dir, f"page_source_{ticker}_{today_date}.html"), "w", encoding="utf-8") as html_file:
-            html_file.write(page_html)
 
         # 下載 Gamma 圖片
         page.mouse.move(200, 200)
