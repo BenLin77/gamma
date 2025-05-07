@@ -1,15 +1,17 @@
 cd /home/ben/code/gex
 
-/home/ben/.local/bin/pipenv run python playwright_record.py --auth auth.json  --config config.json >> /home/ben/Downloads/crontab.log 2>&1
+# 使用 uv 執行 playwright_record.py (第一個配置)
+/home/ben/.local/bin/uv run python playwright_record.py --auth auth.json --config config.json >> /home/ben/Downloads/crontab.log 2>&1
 sleep 60
-/home/ben/.local/bin/pipenv run python playwright_record.py --auth ming_auth.json  --config config_ming.json >> /home/ben/Downloads/crontab.log 2>&1
+
+# 使用 uv 執行 playwright_record.py (第二個配置)
+/home/ben/.local/bin/uv run python playwright_record.py --auth ming_auth.json --config config_ming.json >> /home/ben/Downloads/crontab.log 2>&1
 sleep 10
-/home/ben/.local/bin/pipenv run python gamma_converter.py --force --overwrite  >> /home/ben/Downloads/crontab.log 2>&1
+
+# 使用 uv 執行 gamma_converter.py
+/home/ben/.local/bin/uv run python gamma_converter.py --force --overwrite >> /home/ben/Downloads/crontab.log 2>&1
 sleep 150
-/home/ben/.local/bin/pipenv run python sending_discord.py >> /home/ben/Downloads/crontab.log 2>&1
-#sleep 15
-#/home/ben/.local/bin/pipenv run python put_dom_trade.py >> /home/ben/Downloads/crontab.log 2>&1
-#sleep 15
-#/home/ben/.local/bin/pipenv run python ibkr_order.py >> /home/ben/Downloads/crontab.log 2>&1
-#sleep 600
-#/home/ben/.local/bin/pipenv run python gamma_alert.py
+
+# 使用 uv 執行 sending_discord.py
+/home/ben/.local/bin/uv run python sending_discord.py >> /home/ben/Downloads/crontab.log 2>&1
+

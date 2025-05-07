@@ -56,7 +56,9 @@ def process_ticker(page, ticker, download_dir):
         wait_for_chart(page)
         
         # 只點擊下載按鈕
-        page.get_by_role("button", name="下載").click()
+        with page.expect_download() as download_info:
+            page.get_by_role("button", name="下載").click()
+        download = download_info.value
         time.sleep(3)  # 等待一下讓點擊操作完成
         
         # 創建HTML保存目錄
@@ -65,6 +67,13 @@ def process_ticker(page, ticker, download_dir):
         today_date = datetime.today().strftime('%Y%m%d')
         html_filename = f"Gamma_{ticker}_{today_date}.html"
         html_filepath = os.path.join(html_dir, html_filename)
+        
+        # 將下載的HTML文件移動到指定目錄
+        try:
+            shutil.move(download.path(), html_filepath)
+            print(f"成功保存HTML文件到 {html_filepath}")
+        except Exception as e:
+            print(f"移動HTML文件失敗: {str(e)}")
         
 
         # 下載 Gamma 圖片
@@ -81,9 +90,26 @@ def process_ticker(page, ticker, download_dir):
         new_filename = f"Gamma_{ticker}_{today_date}.png"
         new_filepath = os.path.join(gamma_dir, new_filename)
         shutil.move(download.path(), new_filepath)
+        time.sleep(15)
 
-        # Smile 圖片處理
+        # TV Code 處理
         page.get_by_text("Gamma", exact=True).click()
+        page.get_by_role("option", name="TV Code").click()
+        page.get_by_role("button", name="Enter").click()
+        time.sleep(45)
+
+        page.mouse.move(300, 300)
+        text_content = page.inner_text(".pt-5 p")
+
+        tvcode_dir = os.path.join(download_dir, "tvcode")
+        os.makedirs(tvcode_dir, exist_ok=True)
+        text_filename = f"tvcode_{today_date}.txt"
+        text_filepath = os.path.join(tvcode_dir, text_filename)
+
+        with open(text_filepath, "a") as text_file:
+            text_file.write(text_content + "\n\n")
+        # Smile 圖片處理
+        page.get_by_text("TV Code").click()
         page.get_by_role("option", name="Smile").click()
         page.get_by_role("button", name="Enter").click()
         time.sleep(20)
@@ -100,22 +126,6 @@ def process_ticker(page, ticker, download_dir):
         new_filepath = os.path.join(smile_dir, new_filename)
         shutil.move(download2.path(), new_filepath)
 
-        # TV Code 處理
-        page.get_by_text("Smile", exact=True).click()
-        page.get_by_role("option", name="TV Code").click()
-        page.get_by_role("button", name="Enter").click()
-        time.sleep(45)
-
-        page.mouse.move(300, 300)
-        text_content = page.inner_text(".pt-5 p")
-
-        tvcode_dir = os.path.join(download_dir, "tvcode")
-        os.makedirs(tvcode_dir, exist_ok=True)
-        text_filename = f"tvcode_{today_date}.txt"
-        text_filepath = os.path.join(tvcode_dir, text_filename)
-
-        with open(text_filepath, "a") as text_file:
-            text_file.write(text_content + "\n\n")
 
         page.keyboard.press('F5', delay=3000)
         page.reload()

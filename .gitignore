@@ -10,7 +10,7 @@ __pycache__/
 
 # OS
 .DS_Store
-
+.bak
 # Data files
 auth.json
 ming_auth.json

@@ -1,3 +1,5 @@
 cd /home/ben/code/gex
 
-/home/ben/.local/bin/pipenv run python put_dom_trade.py >> /home/ben/Downloads/crontab.log 2>&1
+# 使用 uv 執行 put_dom_trade.py
+/home/ben/.local/bin/uv run python put_dom_trade.py >> /home/ben/Downloads/crontab.log 2>&1
+

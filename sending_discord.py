@@ -53,15 +53,15 @@ def find_files(directory, date_str):
                     print(f"找到符合的檔案: {filename}")
                     files.append(os.path.join(root, filename))
                 else:
-                    print(f"檔案日期不符: {filename}")
+                    pass
             elif filename.endswith('.png'):
                 if date_str in filename:
                     print(f"找到符合的圖片: {filename}")
                     files.append(os.path.join(root, filename))
                 else:
-                    print(f"圖片日期不符: {filename}")
+                    pass
             else:
-                print(f"檔案格式不符: {filename}")
+                pass
     return files
 
 @bot.event
