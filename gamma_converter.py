@@ -93,6 +93,10 @@ def convert_to_long(input_text):
     
     for line in lines:
         try:
+            # 忽略分隔線（如 "===== spx ====="）
+            if re.match(r'^=+\s+\w+\s+=+$', line):
+                continue
+                
             if ':' not in line:
                 continue
                 
