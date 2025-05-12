@@ -242,14 +242,25 @@ def process_ticker(page, ticker, download_dir):
                     text_content = "無法獲取TV Code"
 
             if text_content and text_content.strip():
-                tvcode_dir = os.path.join(download_dir, "tvcode")
-                os.makedirs(tvcode_dir, exist_ok=True)
-                today_date = datetime.today().strftime('%Y%m%d')
-                text_filename = f"tvcode_{today_date}.txt"
-                text_filepath = os.path.join(tvcode_dir, text_filename)
+                # 過濾掉「掌握數據」相關的行
+                filtered_lines = []
+                for line in text_content.split('\n'):
+                    if '掌握數據' not in line and '掌握資料' not in line and '掌握資訊' not in line:
+                        filtered_lines.append(line)
+                
+                # 重新組合過濾後的文本
+                filtered_text = '\n'.join(filtered_lines)
+                
+                # 只有在過濾後的文本不為空時才保存
+                if filtered_text.strip():
+                    tvcode_dir = os.path.join(download_dir, "tvcode")
+                    os.makedirs(tvcode_dir, exist_ok=True)
+                    today_date = datetime.today().strftime('%Y%m%d')
+                    text_filename = f"tvcode_{today_date}.txt"
+                    text_filepath = os.path.join(tvcode_dir, text_filename)
 
-                with open(text_filepath, "a") as text_file:
-                    text_file.write(text_content + "\n\n")
+                    with open(text_filepath, "a") as text_file:
+                        text_file.write(filtered_text + "\n\n")
                 print(f"成功保存TV Code到 {text_filepath}")
         except Exception as e:
             print(f"處理TV Code失敗: {str(e)}")
