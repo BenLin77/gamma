@@ -242,10 +242,12 @@ def process_ticker(page, ticker, download_dir):
                     text_content = "無法獲取TV Code"
 
             if text_content and text_content.strip():
-                # 過濾掉「掌握數據」相關的行
+                # 過濾掉所有包含中文字元的行
                 filtered_lines = []
                 for line in text_content.split('\n'):
-                    if '掌握數據' not in line and '掌握資料' not in line and '掌握資訊' not in line:
+                    # 使用正則表達式檢查是否包含中文字元
+                    # CJK Unified Ideographs (\u4e00-\u9fff) 和其他常見中文範圍
+                    if not re.search(r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3000-\u303f]', line):
                         filtered_lines.append(line)
                 
                 # 重新組合過濾後的文本
