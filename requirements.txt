@@ -13,3 +13,5 @@ yfinance>=0.2.36
 matplotlib>=3.8.0
 flask>=2.0.1
 gunicorn>=20.1.0
+glob2>=0.7
+json5>=0.9.14

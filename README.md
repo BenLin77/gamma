@@ -56,11 +56,12 @@
 
 1. 安裝依賴：
 ```bash
-# 使用 pipenv
-pipenv install
+# 使用 uv
+uv pip install -r requirements.txt
 
-# 或使用 pip
-pip install -r requirements.txt
+# 或使用其他包管理器
+# pipenv install
+# pip install -r requirements.txt
 ```
 
 2. 設置配置文件：
@@ -71,7 +72,7 @@ pip install -r requirements.txt
 
 ### 數據視覺化 (gamma_view.py)
 ```bash
-pipenv run streamlit run gamma_view.py
+uv run streamlit run gamma_view.py
 ```
 
 功能特點：
@@ -130,7 +131,7 @@ python gamma_converter.py -f tvcode_20240312.txt
 
 ### Put Dominate 分析
 ```bash
-pipenv run python put_dom_trade.py
+uv run python put_dom_trade.py
 ```
 
 功能特點：
@@ -156,13 +157,39 @@ pipenv run python put_dom_trade.py
 
 ### Discord 通知
 ```bash
-pipenv run python sending_discord.py
+uv run python sending_discord.py
 ```
 
 ### 自動化運行
 ```bash
 ./run.sh
 ```
+
+### 從 HTML 文件提取 Gamma 數據 (extract_gamma_from_html.py)
+```bash
+uv run python extract_gamma_from_html.py
+```
+
+功能特點：
+1. 數據提取：
+   - 自動從 HTML 文件中提取 Plotly 圖表數據
+   - 支援批量處理多個股票的 HTML 文件
+   - 自動辨識檔案名中的股票代號和日期
+
+2. 數據轉換：
+   - 將提取的 Gamma 數據轉換為 TradingView 格式
+   - 生成符合 TradingView 指標的文本格式
+   - 支援 Gamma 水平數據的處理
+
+3. 多模式運行：
+   - 模式 1：從 HTML 文件提取 Gamma 數據
+   - 模式 2：保存股票 Gamma 水平數據
+   - 模式 3：同時執行上述兩種功能
+
+4. 輸出功能：
+   - 自動創建股票特定的輸出目錄
+   - 生成摘要報告和處理統計
+   - 支援自定義數據輸入
 
 ## 配置文件說明
 
@@ -192,6 +219,7 @@ pipenv run python sending_discord.py
 - `gamma_converter.py`: 數據轉換
 - `backup_gex.py`: 數據備份
 - `put_dom_trade.py`: Put Dominate 分析
+- `extract_gamma_from_html.py`: 從 HTML 文件提取 Gamma 數據和處理 Gamma 水平數據
 
 ## 注意事項
 1. 請確保已安裝所有必要的依賴
