@@ -4,10 +4,6 @@ cd /home/ben/code/gex
 /home/ben/.local/bin/uv run python playwright_record.py --auth auth.json --config config.json >> /home/ben/Downloads/crontab.log 2>&1
 sleep 60
 
-# 使用 uv 執行 playwright_record.py (第二個配置)
-/home/ben/.local/bin/uv run python playwright_record.py --auth ming_auth.json --config config_ming.json >> /home/ben/Downloads/crontab.log 2>&1
-sleep 10
-
 # 使用 uv 執行 gamma_converter.py
 /home/ben/.local/bin/uv run python gamma_converter.py --force --overwrite >> /home/ben/Downloads/crontab.log 2>&1
 sleep 150

@@ -10,7 +10,11 @@
         "tsla",
         "uvix",
         "svix",
-        "tlt"
+        "tlt",
+	    "hims",
+	    "sofi",
+	    "mstr",
+	    "pltr"
     ],
     "download_settings": {
         "wait_time": {
