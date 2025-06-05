@@ -14,7 +14,9 @@
 	    "hims",
 	    "sofi",
 	    "mstr",
-	    "pltr"
+	    "pltr",
+        "avgo",
+        "upst"
     ],
     "download_settings": {
         "wait_time": {
