@@ -749,11 +749,11 @@ async def send_market_status():
                 else:
                     # 檢查是否從 Negative 變為 Positive (剛站上 positive gamma)
                     if gamma_history[stock]['ce_env']['status'] == 'Negative' and current_gamma_ce_env == 'Positive' and stock in monitored_symbols:
-                        # 發送 Bark 通知
+                        # 發送 Pushover 通知
                         notification_type = "positive_gamma_ce_first_day"
                         if not has_sent_notification_today(stock, notification_type):
-                            send_bark_notification(f"{stock}剛站上positive gamma CE第一天", "isArchive=1")
-                            print(f"已發送 Bark 通知: {stock}剛站上positive gamma CE第一天")
+                            send_pushover_notification(f"{stock}剛站上positive gamma CE第一天", priority=1, sound="cashregister")
+                            print(f"已發送 Pushover 通知: {stock}剛站上positive gamma CE第一天")
                     
                     gamma_history[stock]['ce_env'] = {'status': current_gamma_ce_env, 'days': 1}
                 
@@ -767,16 +767,16 @@ async def send_market_status():
                         if days >= 3:  # 第三天或更多天
                             notification_type = f"negative_gamma_day_{days}"
                             if not has_sent_notification_today(stock, notification_type):
-                                send_bark_notification(f"{stock}在negative gamma第{days}天，請務必做好避險", "isArchive=1")
-                                print(f"已發送 Bark 通知: {stock}在negative gamma第{days}天，請務必做好避險")
+                                send_pushover_notification(f"{stock}在negative gamma第{days}天，請務必做好避險", priority=1, sound="siren")
+                                print(f"已發送 Pushover 通知: {stock}在negative gamma第{days}天，請務必做好避險")
                 else:
                     # 檢查是否從 Negative 變為 Positive (剛站上 positive gamma)
                     if gamma_history[stock]['env']['status'] == 'Negative' and current_gamma_env == 'Positive' and stock in monitored_symbols:
                         notification_type = "positive_gamma_first_day"
                         if not has_sent_notification_today(stock, notification_type):
-                            # 發送 Bark 通知
-                            send_bark_notification(f"{stock}剛站上positive gamma第一天", "isArchive=1")
-                            print(f"已發送 Bark 通知: {stock}剛站上positive gamma第一天")
+                            # 發送 Pushover 通知
+                            send_pushover_notification(f"{stock}剛站上positive gamma第一天", priority=1, sound="cashregister")
+                            print(f"已發送 Pushover 通知: {stock}剛站上positive gamma第一天")
                     
                     gamma_history[stock]['env'] = {'status': current_gamma_env, 'days': 1}
             
@@ -882,39 +882,65 @@ async def send_market_status():
     else:
         print("無法找到指定的Discord頻道")
 
-def send_bark_notification(message, params="", repeat=1):
-    """發送 Bark 通知
+def send_pushover_notification(message, priority=0, sound=None, repeat=1):
+    """發送 Pushover 通知
     
     Args:
         message: 通知訊息
-        params: 額外參數
+        priority: 優先級 (-2, -1, 0, 1, 2)
+        sound: 聲音類型
         repeat: 重複發送次數
     """
     try:
-        # 從環境變數讀取 BARK_KEY
-        bark_key = os.getenv('BARK_KEY')
-        if not bark_key:
-            print("錯誤：找不到 BARK_KEY 環境變數，請確保已在 .env 文件中設置")
+        # 從環境變數讀取 PUSHOVER_TOKEN 和 PUSHOVER_USER
+        pushover_token = os.getenv('PUSHOVER_TOKEN')
+        pushover_user = os.getenv('PUSHOVER_USER')
+        
+        if not pushover_token:
+            print("錯誤：找不到 PUSHOVER_TOKEN 環境變數，請確保已在 .env 文件中設置")
+            return False
+        
+        if not pushover_user:
+            print("錯誤：找不到 PUSHOVER_USER 環境變數，請確保已在 .env 文件中設置")
             return False
         
         success = True
         for i in range(repeat):
-            url = f"https://api.day.app/{bark_key}/{message}?{params}"
-            print(f"正在發送 Bark 通知: {url}")
-            response = requests.get(url)
+            # 準備 Pushover API 請求
+            url = "https://api.pushover.net/1/messages.json"
+            data = {
+                'token': pushover_token,
+                'user': pushover_user,
+                'message': message,
+                'priority': priority
+            }
+            
+            # 設置聲音（如果有指定）
+            if sound:
+                data['sound'] = sound
+            
+            print(f"正在發送 Pushover 通知: {message}")
+            response = requests.post(url, data=data)
+            
             if response.status_code == 200:
-                print(f"Bark 通知發送成功 ({i+1}/{repeat})")
+                result = response.json()
+                if result.get('status') == 1:
+                    print(f"Pushover 通知發送成功 ({i+1}/{repeat})")
+                else:
+                    print(f"Pushover 通知發送失敗: {result.get('errors', '未知錯誤')}")
+                    success = False
             else:
-                print(f"Bark 通知發送失敗，HTTP 狀態碼: {response.status_code}")
+                print(f"Pushover 通知發送失敗，HTTP 狀態碼: {response.status_code}")
                 print(f"響應內容: {response.text}")
-            success = success and response.status_code == 200
+                success = False
+                
             if i < repeat - 1 and repeat > 1:
                 print(f"等待 3 秒後發送下一次通知 ({i+1}/{repeat})...")
                 time.sleep(3)  # 如果需要重複發送，等待3秒再發送下一次
         
         return success
     except Exception as e:
-        print(f"發送 Bark 通知時發生錯誤: {e}")
+        print(f"發送 Pushover 通知時發生錯誤: {e}")
         return False
 
 def check_vix_spx_gamma_flip_condition(market_data):
@@ -954,8 +980,8 @@ def check_vix_spx_gamma_flip_condition(market_data):
                 # 如果是第一次，發送三次 Bark 通知；否則發送一次
                 repeat_count = 3 if is_first_notification else 1
                 
-                # 使用 isArchive=1 參數確保通知被保存
-                send_bark_notification(message, "level=timeSensitive&sound=alarm&isArchive=1", repeat=repeat_count)
+                # 使用高優先級和特殊聲音
+                send_pushover_notification(message, priority=2, sound="alien", repeat=repeat_count)
                 print(f"已發送重要警告通知: {message}，重複次數: {repeat_count}")
                 
                 # 記錄已發送通知

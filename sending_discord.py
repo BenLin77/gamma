@@ -42,10 +42,15 @@ channels = {
     'smile_smci': 1336296804945235998,
 }
 
-# 遞迴查找目錄中的檔案
+# 遞迴查找目錄中的檔案，但略過備份資料夾
 def find_files(directory, date_str):
     files = []
     for root, _, filenames in os.walk(directory):
+        # 略過備份資料夾
+        if 'backup' in root.lower() or 'GEX_file_backup' in root:
+            print(f"略過備份資料夾: {root}")
+            continue
+            
         for filename in filenames:
             # 檢查檔名是否符合 tvcode_YYYYMMDD.txt 格式
             if filename.startswith('tvcode_') and filename.endswith('.txt'):

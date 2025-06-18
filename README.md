@@ -1,239 +1,32 @@
-# GEX 股票分析系統
+# Gamma 交易系統
 
-這是一個綜合性的股票分析系統，專注於 Gamma Exposure (GEX) 分析和自動化數據採集。
+基於 SPX Gamma 層級的自動化期貨交易系統。
 
-## 主要功能
+## 快速開始
 
-### 1. 數據視覺化 (gamma_view.py)
-- 互動式 K 線圖顯示
-- Gamma 指標疊加顯示
-- VIX 即時數據整合
-- 支援多股票數據
-- 自定義時間範圍查看
-- 指標統計分析：
-  * 穿越次數統計
-  * 向下穿越機率
-  * 平均持續時間
-  * 最近價格距離
-
-### 2. 數據採集 (playwright_record.py)
-- 自動化數據採集
-- 支援多股票數據下載
-- 包含 Gamma、Smile 圖表擷取
-- TV Code 文本擷取
-
-### 3. Discord 通知 (sending_discord.py)
-- 自動發送分析結果到 Discord
-- 支援圖片和文本消息
-- 多頻道訊息分發
-
-### 4. 數據處理 (gamma_converter.py)
-- Gamma 數據轉換和處理
-- 數據格式標準化
-- Excel 檔案處理
-
-### 5. 數據備份 (backup_gex.py)
-- 自動備份歷史數據
-- 維護數據完整性
-
-### 6. Put Dominate 分析 (put_dom_trade.py)
-- 自動分析多個股票的 Put Dominate 數據
-- 計算並顯示：
-  * Gamma Flip
-  * Gamma Flip CE
-  * Put Dominate
-  * Put Dominate 變化
-  * Daily Gamma Environment
-  * All Contracts Gamma Environment
-- 特殊情況提醒：
-  * V型反轉（看漲）
-  * 倒V型反轉（看跌）
-  * 首次跌破 Gamma Flip
-- 自動發送分析結果到 Discord
-- 支援批量下載歷史價格數據
-
-## 安裝指南
-
-1. 安裝依賴：
 ```bash
-# 使用 uv
-uv pip install -r requirements.txt
+# 測試 IB 連接
+./run_trading.sh test
 
-# 或使用其他包管理器
-# pipenv install
-# pip install -r requirements.txt
+# 啟動監控（模擬模式）
+./run_trading.sh monitor
+
+# 檢查狀態
+./run_trading.sh status
+
+# 停止監控
+./run_trading.sh stop
 ```
 
-2. 設置配置文件：
-- 配置 Discord webhook (如需使用通知功能)
-- 設置 auth.json 認證文件
+## 主要檔案
 
-## 使用說明
+- `gamma_config.yaml` - 交易配置
+- `ibkr_order.py` - 主程式
+- `run_trading.sh` - 管理腳本
+- `performance_analyzer.py` - 績效分析
 
-### 數據視覺化 (gamma_view.py)
-```bash
-uv run streamlit run gamma_view.py
-```
+## 期貨合約自動管理
 
-功能特點：
-1. 基本功能：
-   - 上傳 Excel 文件
-   - 選擇股票代碼
-   - 自定義時間範圍
-   - 多重指標疊加
+系統會自動選擇合適的期貨合約，避免交易接近到期的合約。
 
-2. 指標分析：
-   - 選擇多個技術指標
-   - 查看指標統計數據
-   - 分析指標有效性
-
-3. VIX 整合：
-   - 自動獲取 VIX 數據
-   - 雙 Y 軸顯示
-   - 即時數據同步
-   - 可選擇性顯示
-
-4. 數據統計：
-   - 指標穿越統計
-   - 機率分析
-   - 持續時間計算
-   - 價格距離分析
-
-### 數據採集 (playwright_record.py)
-```bash
-# 基本使用
-python playwright_record.py
-
-# 參數說明
---auth          認證文件路徑 (預設: auth.json)
---config        配置文件路徑 (預設: config.json)
---download-dir  下載目錄路徑 (預設: /home/ben/pCloudDrive/stock/GEX/GEX_file/)
-
-# 範例
-python playwright_record.py --auth ming_auth.json --config custom_config.json
-```
-
-### 數據轉換 (gamma_converter.py)
-```bash
-# 基本使用
-python gamma_converter.py
-
-# 參數說明
--r, --reverse   將簡化格式轉換回原始格式
--p, --path      指定 GEX 文件路徑
--d, --debug     顯示調試信息
--f, --file      指定要處理的文件名
---overwrite     直接覆蓋原始文件
-
-# 範例
-python gamma_converter.py -f tvcode_20240312.txt
-```
-
-### Put Dominate 分析
-```bash
-uv run python put_dom_trade.py
-```
-
-功能特點：
-1. 數據分析：
-   - 自動計算多個關鍵指標
-   - 追蹤 Put Dominate 趨勢變化
-   - 識別重要市場轉折點
-
-2. 趨勢反轉偵測：
-   - V型反轉（看漲信號）
-   - 倒V型反轉（看跌信號）
-   - 變化幅度過濾（>1.0）
-
-3. Gamma 環境分析：
-   - Daily Gamma Environment
-   - All Contracts Gamma Environment
-   - Gamma Flip 突破提醒
-
-4. 自動化報告：
-   - 生成美觀的表格圖片
-   - Discord 自動通知
-   - 中文說明訊息
-
-### Discord 通知
-```bash
-uv run python sending_discord.py
-```
-
-### 自動化運行
-```bash
-./run.sh
-```
-
-### 從 HTML 文件提取 Gamma 數據 (extract_gamma_from_html.py)
-```bash
-uv run python extract_gamma_from_html.py
-```
-
-功能特點：
-1. 數據提取：
-   - 自動從 HTML 文件中提取 Plotly 圖表數據
-   - 支援批量處理多個股票的 HTML 文件
-   - 自動辨識檔案名中的股票代號和日期
-
-2. 數據轉換：
-   - 將提取的 Gamma 數據轉換為 TradingView 格式
-   - 生成符合 TradingView 指標的文本格式
-   - 支援 Gamma 水平數據的處理
-
-3. 多模式運行：
-   - 模式 1：從 HTML 文件提取 Gamma 數據
-   - 模式 2：保存股票 Gamma 水平數據
-   - 模式 3：同時執行上述兩種功能
-
-4. 輸出功能：
-   - 自動創建股票特定的輸出目錄
-   - 生成摘要報告和處理統計
-   - 支援自定義數據輸入
-
-## 配置文件說明
-
-### config.json
-```json
-{
-    "tickers": [
-        "spx", "qqq", "iwm", "smh", "vix",
-        "smci", "nvda", "tsla", "uvix", "svix", "tlt"
-    ],
-    "download_settings": {
-        "wait_time": {
-            "page_load": 15,
-            "gamma_load": 15,
-            "smile_load": 20,
-            "tvcode_load": 45
-        },
-        "retries": 3
-    }
-}
-```
-
-## 檔案結構
-- `gamma_view.py`: 視覺化界面
-- `playwright_record.py`: 數據採集
-- `sending_discord.py`: Discord 通知
-- `gamma_converter.py`: 數據轉換
-- `backup_gex.py`: 數據備份
-- `put_dom_trade.py`: Put Dominate 分析
-- `extract_gamma_from_html.py`: 從 HTML 文件提取 Gamma 數據和處理 Gamma 水平數據
-
-## 注意事項
-1. 請確保已安裝所有必要的依賴
-2. 運行前請確認配置文件設置正確
-3. 建議定期備份重要數據
-
-## 開發環境
-- Python 3.12
-- Pipenv 虛擬環境
-- Playwright 自動化測試
-- Streamlit 視覺化框架
-
-## 更新日誌
-- 2024-03-17: 新增 Put Dominate 分析功能
-- 2024-03-12: 新增 VIX 數據整合
-- 2024-03-12: 優化視覺化界面
-- 2024-03-10: 更新數據備份功能 
+更多詳細說明請參考 `gamma_trading_guide.md`。 

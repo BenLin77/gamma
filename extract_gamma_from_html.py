@@ -275,6 +275,10 @@ def get_latest_html_file(stock_dir, use_newest=False):
     if not os.path.exists(html_dir):
         return None
     
+    # 略過備份資料夾
+    if 'backup' in html_dir.lower() or 'GEX_file_backup' in html_dir:
+        return None
+    
     # 獲取當前日期
     today = datetime.now().strftime("%Y%m%d")
     
@@ -397,8 +401,17 @@ def main():
         # 獲取當日日期
         today_date = datetime.now().strftime('%Y%m%d')
         
-        # 嘗試直接獲取所有股票目錄
-        stock_dirs = glob.glob(os.path.join(base_dir, "*"))
+        # 嘗試直接獲取所有股票目錄，但略過備份資料夾
+        all_dirs = glob.glob(os.path.join(base_dir, "*"))
+        stock_dirs = []
+        
+        for dir_path in all_dirs:
+            if os.path.isdir(dir_path):
+                # 略過備份資料夾
+                if 'backup' in dir_path.lower() or 'GEX_file_backup' in dir_path:
+                    print(f"略過備份資料夾: {dir_path}")
+                    continue
+                stock_dirs.append(dir_path)
         
         if not stock_dirs:
             print(f"警告: 在 {base_dir} 中未找到任何股票目錄")
@@ -417,42 +430,39 @@ def main():
         all_gamma_data = {}
         
         for stock_dir in stock_dirs:
-            if os.path.isdir(stock_dir):
-                stock_symbol = os.path.basename(stock_dir)
-                html_dir = os.path.join(stock_dir, "html")
-                
-                if not os.path.exists(html_dir):
-                    print(f"跳過 {stock_symbol}: html 目錄不存在 ({html_dir})")
-                    skipped_stocks.append(stock_symbol)
-                    continue
-                
-                # 找出最新的 HTML 文件
-                latest_html_file = get_latest_html_file(stock_dir, use_newest)
-                
-                if not latest_html_file:
-                    print(f"跳過 {stock_symbol}: 未找到符合條件的 HTML 文件")
-                    skipped_stocks.append(stock_symbol)
-                    continue
-                
-                # 從檔案名中提取日期
-                file_name = os.path.basename(latest_html_file)
-                match = re.search(r'Gamma_\w+_(\d+)\.html', file_name)
-                file_date = match.group(1) if match else today_date
-                
-                print(f"處理股票 {stock_symbol}: 使用最新的 HTML 文件 ({file_date})")
-                
-                # 處理 HTML 文件
-                result = process_html_file(latest_html_file, all_gamma_data)
-                
-                if result:
-                    results.append(result)
-                    processed_stocks.append(stock_symbol)
-                    print(f"成功處理 {stock_symbol}: 提取了 Gamma 數據")
-                else:
-                    print(f"警告: {stock_symbol} 的文件處理失敗")
-                    skipped_stocks.append(stock_symbol)
-                
-                # 已經在上面處理過了，不需要重複
+            stock_symbol = os.path.basename(stock_dir)
+            html_dir = os.path.join(stock_dir, "html")
+            
+            if not os.path.exists(html_dir):
+                print(f"跳過 {stock_symbol}: html 目錄不存在 ({html_dir})")
+                skipped_stocks.append(stock_symbol)
+                continue
+            
+            # 找出最新的 HTML 文件
+            latest_html_file = get_latest_html_file(stock_dir, use_newest)
+            
+            if not latest_html_file:
+                print(f"跳過 {stock_symbol}: 未找到符合條件的 HTML 文件")
+                skipped_stocks.append(stock_symbol)
+                continue
+            
+            # 從檔案名中提取日期
+            file_name = os.path.basename(latest_html_file)
+            match = re.search(r'Gamma_\w+_(\d+)\.html', file_name)
+            file_date = match.group(1) if match else today_date
+            
+            print(f"處理股票 {stock_symbol}: 使用最新的 HTML 文件 ({file_date})")
+            
+            # 處理 HTML 文件
+            result = process_html_file(latest_html_file, all_gamma_data)
+            
+            if result:
+                results.append(result)
+                processed_stocks.append(stock_symbol)
+                print(f"成功處理 {stock_symbol}: 提取了 Gamma 數據")
+            else:
+                print(f"警告: {stock_symbol} 的文件處理失敗")
+                skipped_stocks.append(stock_symbol)
         
         # 將所有股票的 Gamma 數據存到同一個文件中
         if all_gamma_data:
