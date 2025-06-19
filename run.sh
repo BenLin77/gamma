@@ -46,6 +46,15 @@ else
 fi
 sleep 10
 
+# 步驟 4: 執行 sending_discord.py (發送到 Discord)
+log_info "開始發送資料到 Discord..."
+if /home/ben/.local/bin/uv run python sending_discord.py >> "$LOG_FILE" 2>&1; then
+    log_info "Discord 發送完成"
+else
+    log_error "Discord 發送失敗"
+fi
+sleep 5
+
 log_info "GEX 資料處理流程完成"
 
 # 顯示幫助資訊
@@ -58,6 +67,7 @@ if [[ "${1:-}" == "help" || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     echo "  1. 數據收集 (playwright_record.py)"
     echo "  2. 數據轉換 (gamma_converter.py)"
     echo "  3. Gamma 數據提取 (extract_gamma_from_html.py)"
+    echo "  4. 發送到 Discord (sending_discord.py)"
     echo ""
     echo "注意：Gamma 交易功能已移至 /home/ben/code/gex_trade 專案"
 fi
